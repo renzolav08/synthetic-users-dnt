@@ -216,3 +216,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Variables de entorno — NUNCA subir al repositorio
+.env
+.env.local
+.env.production
+
+# Entorno virtual de Python
+venv/
+__pycache__/
+*.pyc
+
+# Node modules
+node_modules/
+.next/
+
+# VS Code
+.vscode/
