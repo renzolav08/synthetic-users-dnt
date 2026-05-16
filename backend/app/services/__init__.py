@@ -127,3 +127,121 @@ Responde UNICAMENTE con un JSON:
     )
 
     return json.loads(response.choices[0].message.content)
+
+# ── Nodo 3: Generación de perfiles sintéticos (protocolo Innogyzer) ───────────
+async def generar_perfil_agente(
+    agente: dict,
+    contexto: ContextoDetectado,
+    datos_web: dict
+) -> dict:
+    """
+    Genera el perfil JSON completo de un agente siguiendo el protocolo
+    Innogyzer internamente. El emprendedor nunca ve este proceso.
+    """
+
+    es_categoria_m = agente["categoria"] == "M"
+
+    if es_categoria_m:
+        seccion_comportamiento = """
+[COMPORTAMIENTOS Y PATRONES]
+- rutinas_diarias: rutinas típicas del día a día relacionadas con su trabajo/vida
+- marcas_productos: marcas o productos que usa habitualmente
+- habitos_informacion: cómo consume información (redes, boca a boca, etc.)
+
+[JOBS TO BE DONE]
+- job_funcional: la tarea práctica que necesita completar
+- job_emocional: el sentimiento que busca alcanzar o evitar
+- job_social: cómo quiere ser percibido por otros"""
+    else:
+        seccion_comportamiento = """
+[COMPORTAMIENTOS Y PATRONES - EXPERTO]
+- metodologia_trabajo: cómo trabaja y toma decisiones
+- fuentes_informacion: qué fuentes consulta para mantenerse actualizado
+- enfoque_problemas: cómo aborda la resolución de problemas"""
+
+    prompt = f"""Eres un motor de construcción de perfiles humanos sintéticos de alta fidelidad.
+
+Crea un perfil creíble y detallado para el siguiente rol en el contexto de esta idea de negocio:
+
+ROL DEL AGENTE: {agente["rol"]}
+CATEGORIA: {"Consumidor/Usuario (M)" if es_categoria_m else "Experto/Especialista (E)"}
+
+CONTEXTO DEL PROYECTO:
+- Sector: {contexto.sector}
+- País: {contexto.pais}
+- Región: {contexto.region or "no especificada"}
+- Usuarios objetivo: {contexto.usuarios_objetivo}
+- Modelo de negocio: {contexto.modelo_negocio}
+
+DATOS REALES DEL MERCADO (fundamenta el perfil en esto):
+- Tendencias: {datos_web.get("tendencias_sector", "")}
+- Comportamiento real: {datos_web.get("comportamiento_usuario", "")}
+- Barreras reales: {", ".join(datos_web.get("barreras_reales", []))}
+- Contexto cultural: {datos_web.get("contexto_cultural", "")}
+
+Responde ÚNICAMENTE con un JSON con esta estructura:
+{{
+  "nombre": "nombre completo creíble y apropiado para {contexto.pais}",
+  "edad": número entero entre 25 y 55,
+  "ubicacion": "ciudad, {contexto.pais}",
+  "ocupacion": "ocupación específica y detallada relacionada con el sector",
+  "autopercepcion": "cómo se ve a sí mismo en 1-2 oraciones",
+  "creencias_centrales": [
+    "convicción fundamental 1",
+    "convicción fundamental 2",
+    "convicción fundamental 3"
+  ],
+  "miedo_oculto": "un temor profundo que no expresa abiertamente",
+  {seccion_comportamiento}
+  "postura_debate": "su postura crítica específica sobre esta idea de negocio en 1-2 oraciones",
+  "forma_de_hablar": {{
+    "formalidad": "casual|profesional|mezclado",
+    "estructura_frases": "cortas y directas|largas y elaboradas|mixto",
+    "vocabulario_tipico": ["palabra1", "expresión2", "jerga3"],
+    "tono_emocional": "descripción del tono: escéptico, analítico, directo, etc.",
+    "frases_caracteristicas": [
+      "frase típica que diría 1",
+      "frase típica que diría 2",
+      "frase típica que diría 3"
+    ]
+  }}
+}}
+
+IMPORTANTE: El perfil debe ser específico para {contexto.pais} y el sector {contexto.sector}.
+Fundamenta las creencias y comportamientos en los datos reales del mercado provistos.
+NO incluyas texto fuera del JSON."""
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        max_tokens=1000,
+        temperature=0.8
+    )
+
+    perfil = json.loads(response.choices[0].message.content)
+    perfil["rol"] = agente["rol"]
+    perfil["categoria"] = agente["categoria"]
+    perfil["peso"] = agente["peso"]
+    perfil["tipo"] = agente["tipo"]
+    return perfil
+
+
+async def generar_todos_los_perfiles(
+    contexto: ContextoDetectado,
+    datos_web: dict
+) -> list[dict]:
+    """
+    Genera los perfiles de todos los agentes en paralelo usando asyncio.gather().
+    """
+    tareas = [
+        generar_perfil_agente(
+            agente=agente.model_dump(),
+            contexto=contexto,
+            datos_web=datos_web
+        )
+        for agente in contexto.agentes
+    ]
+
+    perfiles = await asyncio.gather(*tareas)
+    return list(perfiles)
