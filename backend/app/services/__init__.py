@@ -245,3 +245,91 @@ async def generar_todos_los_perfiles(
 
     perfiles = await asyncio.gather(*tareas)
     return list(perfiles)
+
+# ── Nodo 4: Debate adversarial por agente ─────────────────────────────────────
+async def generar_argumento_agente(
+    perfil: dict,
+    idea_texto: str,
+    contexto: ContextoDetectado
+) -> dict:
+    """
+    Genera el argumento adversarial de UN agente sobre la idea.
+    El agente habla desde su identidad y postura crítica — no complace.
+    """
+
+    prompt = (
+        f"Eres {perfil['nombre']}, {perfil['ocupacion']} en {perfil['ubicacion']}.\n\n"
+        f"TU PERSONALIDAD:\n"
+        f"- Autopercepción: {perfil['autopercepcion']}\n"
+        f"- Creencias: {', '.join(perfil.get('creencias_centrales', []))}\n"
+        f"- Miedo oculto: {perfil['miedo_oculto']}\n"
+        f"- Postura sobre esta idea: {perfil['postura_debate']}\n\n"
+        f"TU FORMA DE HABLAR:\n"
+        f"- Formalidad: {perfil['forma_de_hablar']['formalidad']}\n"
+        f"- Tono: {perfil['forma_de_hablar']['tono_emocional']}\n"
+        f"- Frases típicas tuyas: {', '.join(perfil['forma_de_hablar']['frases_caracteristicas'])}\n\n"
+        f"LA IDEA QUE DEBES EVALUAR:\n{idea_texto}\n\n"
+        f"TU ROL EN ESTE DEBATE: {perfil['rol']}\n\n"
+        "REGLAS ESTRICTAS:\n"
+        "- Habla SIEMPRE en primera persona como ese personaje\n"
+        "- NO menciones que eres una IA\n"
+        "- NO uses frases genéricas como 'Como experto...'\n"
+        "- USA tu vocabulario y tono característico\n"
+        "- Se CRÍTICO y ESPECÍFICO — no valides sin cuestionar\n"
+        "- Menciona al menos UN punto débil concreto de la idea\n"
+        "- Responde en máximo 4 oraciones directas y contundentes\n"
+        "- NO uses listas ni bullets — habla naturalmente\n\n"
+        "Ahora da tu argumento sobre esta idea:"
+    )
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=300,
+        temperature=0.85
+    )
+
+    argumento = response.choices[0].message.content
+
+    # Clasificar posición automáticamente
+    prompt_clasif = (
+        f"Clasifica este argumento en una sola palabra: pro, contra, o neutral.\n"
+        f"Argumento: {argumento}\n"
+        f"Responde solo con: pro, contra, o neutral"
+    )
+
+    clasif = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt_clasif}],
+        max_tokens=5,
+        temperature=0
+    )
+
+    posicion = clasif.choices[0].message.content.strip().lower()
+    if posicion not in ["pro", "contra", "neutral"]:
+        posicion = "neutral"
+
+    return {
+        "agente_rol": perfil["rol"],
+        "agente_nombre": perfil["nombre"],
+        "agente_categoria": perfil["categoria"],
+        "agente_peso": perfil["peso"],
+        "argumento": argumento,
+        "posicion": posicion
+    }
+
+
+async def ejecutar_debate(
+    perfiles: list,
+    idea_texto: str,
+    contexto: ContextoDetectado
+) -> list:
+    """
+    Ejecuta el debate completo: todos los agentes argumentan en paralelo.
+    """
+    tareas = [
+        generar_argumento_agente(perfil, idea_texto, contexto)
+        for perfil in perfiles
+    ]
+    argumentos = await asyncio.gather(*tareas)
+    return list(argumentos)
