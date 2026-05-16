@@ -333,3 +333,58 @@ async def ejecutar_debate(
     ]
     argumentos = await asyncio.gather(*tareas)
     return list(argumentos)
+
+# ── Nodo 5: Consenso ponderado y árbol de argumentos ─────────────────────────
+async def generar_consenso(
+    argumentos: list,
+    idea_texto: str,
+    contexto: ContextoDetectado
+) -> dict:
+    """
+    Analiza todos los argumentos del debate, aplica los pesos
+    de cada agente y genera el árbol de argumentos final con
+    la recomendación ponderada.
+    """
+
+    # Construir el resumen del debate para el LLM
+    resumen_debate = ""
+    for arg in argumentos:
+        resumen_debate += (
+            f"\n[{arg['agente_rol']} — peso: {arg['agente_peso']}]\n"
+            f"Posición: {arg['posicion']}\n"
+            f"Argumento: {arg['argumento']}\n"
+        )
+
+    prompt = (
+        "Eres un sintetizador experto de debates de evaluación de ideas de negocio.\n\n"
+        f"IDEA EVALUADA:\n{idea_texto}\n\n"
+        f"DEBATE ENTRE AGENTES ESPECIALIZADOS:\n{resumen_debate}\n\n"
+        "Analiza el debate y genera el árbol de argumentos estructurado.\n"
+        "Ten en cuenta el PESO de cada agente al calcular el consenso "
+        "(mayor peso = mayor influencia en la recomendación).\n\n"
+        "Responde ÚNICAMENTE con un JSON con esta estructura:\n"
+        "{\n"
+        '  "acuerdos": [\n'
+        '    {"punto": "descripción del acuerdo", "agentes": ["rol1", "rol2"]}\n'
+        "  ],\n"
+        '  "divergencias": [\n'
+        '    {"punto": "descripción del desacuerdo", "agente_a": "rol1", "agente_b": "rol2"}\n'
+        "  ],\n"
+        '  "fortalezas_idea": ["fortaleza 1", "fortaleza 2"],\n'
+        '  "debilidades_idea": ["debilidad 1", "debilidad 2"],\n'
+        '  "recomendacion": "viable|no_viable|condicionalmente_viable",\n'
+        '  "nivel_confianza": 0.75,\n'
+        '  "condiciones": ["condición 1 si es condicionalmente viable", "condición 2"],\n'
+        '  "resumen_ejecutivo": "resumen del debate en 2-3 oraciones para el emprendedor"\n'
+        "}"
+    )
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        max_tokens=1000,
+        temperature=0.3
+    )
+
+    return json.loads(response.choices[0].message.content)
