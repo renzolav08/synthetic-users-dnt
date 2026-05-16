@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
-
+from app.api import router
 # Cargar variables de entorno del archivo .env
 load_dotenv()
 
@@ -38,3 +38,5 @@ def health_check():
         "status": "OK",
         "environment": os.getenv("ENVIRONMENT", "development")
     }
+
+app.include_router(router, prefix="/api")
