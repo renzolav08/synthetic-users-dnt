@@ -25,7 +25,7 @@ export default function Home() {
     setEstado('analizando')
 
     try {
-      const res = await fetch('http://localhost:8000/api/evaluar-stream', {
+      const res = await fetch('https://synthetic-users-dnt.onrender.com/api/evaluar-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idea_texto: texto }),
