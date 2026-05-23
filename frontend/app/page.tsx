@@ -59,8 +59,9 @@ export default function Home() {
           } catch {}
         }
       }
-    } catch (e: any) {
-      setError(e.message || 'Error inesperado')
+    } catch (e: unknown) {
+     const error = e as Error
+      setError(error.message || 'Error inesperado')
     }
   }
 
