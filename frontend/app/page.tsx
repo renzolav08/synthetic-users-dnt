@@ -61,11 +61,8 @@ export default function Home() {
       }
 
     } catch (e: unknown) {
-     const error = e as Error
-      setError(error.message || 'Error inesperado')
-
-    } catch (e: any) {
-      setError(e.message || 'Error inesperado')
+      const msg = e instanceof Error ? e.message : 'Error inesperado'
+      setError(msg)
     }
   }
 
