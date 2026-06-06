@@ -39,9 +39,64 @@ const LABEL_RECOMENDACION: Record<string, string> = {
   condicionalmente_viable: '◐ Condicionalmente viable',
 }
 
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
+
 export default function DebatePage() {
   const router = useRouter()
-  const { idea, estado, contexto, argumentos, arbol, reset } = useDebateStore()
+  const { idea, estado, contexto, argumentos, arbol, reset, insights_exploracion,
+          setEstado, setContexto, addArgumento, setArbol, setError } = useDebateStore()
+
+  // Si llegamos aquí sin debate iniciado todavía, arrancarlo automáticamente
+  useEffect(() => {
+    if (!idea) { router.replace('/'); return }
+    if (estado !== 'idle') return   // ya está corriendo o terminó
+
+    iniciarDebate()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idea])
+
+  async function iniciarDebate() {
+    setEstado('analizando')
+    try {
+      const res = await fetch(`${API}/evaluar-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idea_texto: idea,
+          insights_exploracion: insights_exploracion ?? undefined,
+        }),
+      })
+      if (!res.ok) throw new Error(`Error del servidor: ${res.status}`)
+      if (!res.body) throw new Error('Sin respuesta del servidor')
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const { tipo, data } = JSON.parse(line.slice(6))
+            if (tipo === 'contexto')        { setContexto(data); setEstado('buscando_web') }
+            else if (tipo === 'datos_web')  { setEstado('generando_perfiles') }
+            else if (tipo === 'perfiles_listos') { setEstado('debatiendo') }
+            else if (tipo === 'argumento')  { addArgumento(data) }
+            else if (tipo === 'consenso')   { setArbol(data); setEstado('consenso') }
+            else if (tipo === 'fin')        { setEstado('completado') }
+          } catch {}
+        }
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Error inesperado'
+      setError(msg)
+    }
+  }
 
   useEffect(() => {
     if (!idea) router.replace('/')
@@ -69,7 +124,12 @@ export default function DebatePage() {
           >
             ← Nueva evaluación
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {insights_exploracion && (
+              <span className="text-xs bg-purple-900/60 border border-purple-700 text-purple-300 px-2.5 py-1 rounded-full">
+                ✓ Con insights de exploración
+              </span>
+            )}
             {cargando && (
               <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
             )}

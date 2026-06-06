@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useDebateStore } from '@/store/useDebateStore'
+import { useExplorarStore } from '@/store/useExplorarStore'
 import { useRouter } from 'next/navigation'
 
 const ESTADOS_LABEL: Record<string, string> = {
@@ -15,8 +16,17 @@ const ESTADOS_LABEL: Record<string, string> = {
 export default function Home() {
   const [texto, setTexto] = useState('')
   const { estado, setIdea, setEstado, setContexto, addArgumento, setArbol, setError, reset } = useDebateStore()
+  const explorarStore = useExplorarStore()
   const router = useRouter()
   const cargando = estado !== 'idle' && estado !== 'error'
+
+  function explorarPrimero() {
+    if (!texto.trim() || texto.trim().length < 20) return
+    explorarStore.reset()
+    // sector y pais se detectarán en la página de exploración vía el Nodo 0
+    explorarStore.setIdea(texto, '', '')
+    router.push('/explorar')
+  }
 
   async function evaluarIdea() {
     if (!texto.trim() || texto.trim().length < 20) return
@@ -25,7 +35,7 @@ export default function Home() {
     setEstado('analizando')
 
     try {
-      const res = await fetch('https://synthetic-users-dnt.onrender.com/api/evaluar-stream', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'}/evaluar-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idea_texto: texto }),
@@ -138,14 +148,39 @@ export default function Home() {
           </div>
         )}
 
-        {/* Botón */}
-        <button
-          onClick={evaluarIdea}
-          disabled={cargando || texto.trim().length < 20}
-          className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm"
-        >
-          {cargando ? 'Evaluando...' : 'Evaluar idea →'}
-        </button>
+        {/* Botones */}
+        <div className="flex flex-col gap-3">
+          {/* Opción principal: explorar primero */}
+          <button
+            onClick={explorarPrimero}
+            disabled={cargando || texto.trim().length < 20}
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm flex items-center justify-center gap-2"
+          >
+            <span>💬</span>
+            Explorar con usuarios sintéticos →
+          </button>
+
+          {/* Opción secundaria: ir directo al debate */}
+          <div className="space-y-1">
+            <button
+              onClick={evaluarIdea}
+              disabled={cargando || texto.trim().length < 20}
+              className="w-full bg-gray-800 hover:bg-gray-700 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed text-gray-300 font-medium py-2.5 rounded-xl border border-gray-700 transition-all duration-200 text-sm"
+            >
+              {cargando ? 'Evaluando...' : 'Ir directo al debate multiagente →'}
+            </button>
+            <p className="text-center text-xs text-gray-600">
+              Úsalo si ya exploraste antes o quieres una evaluación rápida
+            </p>
+          </div>
+        </div>
+
+        {/* Descripción del flujo */}
+        {!cargando && texto.trim().length >= 20 && (
+          <p className="text-center text-xs text-gray-600 mt-1">
+            Explorar = entrevistar perfiles sintéticos por stakeholder · Debate = evaluación adversarial directa
+          </p>
+        )}
       </div>
 
       {/* Agentes info */}

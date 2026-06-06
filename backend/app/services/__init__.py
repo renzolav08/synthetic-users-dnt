@@ -1,6 +1,9 @@
 from openai import AsyncOpenAI
 from tavily import TavilyClient
-from app.schemas import ContextoDetectado
+from app.schemas import (
+    ContextoDetectado, Stakeholder, StakeholdersDetectados,
+    SintesisInput, SintesisExploracion,
+)
 from dotenv import load_dotenv
 import asyncio
 import os
@@ -250,12 +253,31 @@ async def generar_todos_los_perfiles(
 async def generar_argumento_agente(
     perfil: dict,
     idea_texto: str,
-    contexto: ContextoDetectado
+    contexto: ContextoDetectado,
+    insights_exploracion: dict | None = None,
 ) -> dict:
     """
     Genera el argumento adversarial de UN agente sobre la idea.
-    El agente habla desde su identidad y postura crítica — no complace.
+    Si se proveen insights de exploración, el agente los usa como evidencia de campo.
     """
+
+    # Bloque de contexto de exploración (solo si viene con datos)
+    bloque_insights = ""
+    if insights_exploracion:
+        jobs = insights_exploracion.get("jobs_principales", [])
+        jobs_str = "; ".join(
+            f"{j.get('stakeholder','')}: {j.get('job_funcional','')}"
+            for j in jobs[:3]
+        )
+        fricciones = ", ".join(insights_exploracion.get("fricciones_criticas", [])[:3])
+        bloque_insights = (
+            f"\nEVIDENCIA DE ENTREVISTAS CON USUARIOS REALES (considera esto antes de argumentar):\n"
+            f"- Problema validado: {insights_exploracion.get('resumen_problema', '')}\n"
+            f"- Jobs principales detectados: {jobs_str}\n"
+            f"- Fricciones críticas: {fricciones}\n"
+            f"- Nivel de validación: {insights_exploracion.get('validacion_problema', '')}\n"
+            f"Usa esta evidencia de campo para fundamentar tu argumento con datos concretos.\n"
+        )
 
     prompt = (
         f"Eres {perfil['nombre']}, {perfil['ocupacion']} en {perfil['ubicacion']}.\n\n"
@@ -268,7 +290,8 @@ async def generar_argumento_agente(
         f"- Formalidad: {perfil['forma_de_hablar']['formalidad']}\n"
         f"- Tono: {perfil['forma_de_hablar']['tono_emocional']}\n"
         f"- Frases típicas tuyas: {', '.join(perfil['forma_de_hablar']['frases_caracteristicas'])}\n\n"
-        f"LA IDEA QUE DEBES EVALUAR:\n{idea_texto}\n\n"
+        f"LA IDEA QUE DEBES EVALUAR:\n{idea_texto}\n"
+        f"{bloque_insights}\n"
         f"TU ROL EN ESTE DEBATE: {perfil['rol']}\n\n"
         "REGLAS ESTRICTAS:\n"
         "- Habla SIEMPRE en primera persona como ese personaje\n"
@@ -277,6 +300,7 @@ async def generar_argumento_agente(
         "- USA tu vocabulario y tono característico\n"
         "- Se CRÍTICO y ESPECÍFICO — no valides sin cuestionar\n"
         "- Menciona al menos UN punto débil concreto de la idea\n"
+        "- Si hay evidencia de entrevistas, úsala explícitamente\n"
         "- Responde en máximo 4 oraciones directas y contundentes\n"
         "- NO uses listas ni bullets — habla naturalmente\n\n"
         "Ahora da tu argumento sobre esta idea:"
@@ -322,13 +346,15 @@ async def generar_argumento_agente(
 async def ejecutar_debate(
     perfiles: list,
     idea_texto: str,
-    contexto: ContextoDetectado
+    contexto: ContextoDetectado,
+    insights_exploracion: dict | None = None,
 ) -> list:
     """
     Ejecuta el debate completo: todos los agentes argumentan en paralelo.
+    Si se proveen insights de exploración, cada agente los usa como evidencia.
     """
     tareas = [
-        generar_argumento_agente(perfil, idea_texto, contexto)
+        generar_argumento_agente(perfil, idea_texto, contexto, insights_exploracion)
         for perfil in perfiles
     ]
     argumentos = await asyncio.gather(*tareas)
@@ -388,3 +414,446 @@ async def generar_consenso(
     )
 
     return json.loads(response.choices[0].message.content)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FASE DE EXPLORACIÓN
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Nodo 0: Detección de stakeholders ────────────────────────────────────────
+async def detectar_stakeholders(idea_texto: str) -> StakeholdersDetectados:
+    """
+    A partir de la idea, identifica con quiénes debería hablar el emprendedor
+    para validar su propuesta antes de debatirla formalmente.
+    """
+    prompt = f"""Eres un experto en investigación de usuarios y desarrollo de clientes (Customer Discovery).
+
+Un emprendedor tiene la siguiente idea de negocio:
+{idea_texto}
+
+Tu tarea es identificar TODOS los stakeholders con quienes debería conversar este emprendedor
+para validar su idea. Piensa más allá del usuario final directo — considera decisores,
+influenciadores, aliados y posibles bloqueadores.
+
+Responde ÚNICAMENTE con un JSON válido con esta estructura:
+{{
+  "sector": "sector de la idea",
+  "pais": "país detectado o inferido",
+  "razonamiento": "explicación breve de por qué elegiste estos stakeholders",
+  "stakeholders": [
+    {{
+      "id": "slug_sin_espacios",
+      "nombre": "Nombre legible del stakeholder",
+      "descripcion": "Por qué es relevante para esta idea específica",
+      "relevancia": "alta|media|baja",
+      "tipo": "usuario_final|decisor|influenciador|aliado|regulador",
+      "preguntas_clave": [
+        "Pregunta concreta que el emprendedor debería hacerle",
+        "Otra pregunta clave para descubrir sus jobs to be done",
+        "Pregunta sobre fricciones o temores"
+      ]
+    }}
+  ]
+}}
+
+REGLAS:
+- Identifica entre 3 y 7 stakeholders relevantes
+- Sé específico: no "usuarios" genérico, sino quiénes exactamente (ej: "Madres trabajadoras 30-45 años", "Directores de compras de PYMEs")
+- Las preguntas_clave deben ser abiertas y orientadas a descubrir problemas reales, NO validar la solución
+- Ordena de mayor a menor relevancia
+- NO incluyas texto fuera del JSON"""
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        max_tokens=1500,
+        temperature=0.4
+    )
+
+    data = json.loads(response.choices[0].message.content)
+
+    stakeholders = [Stakeholder(**s) for s in data["stakeholders"]]
+
+    return StakeholdersDetectados(
+        idea_texto=idea_texto,
+        sector=data["sector"],
+        pais=data["pais"],
+        stakeholders=stakeholders,
+        razonamiento=data["razonamiento"]
+    )
+
+
+# ── Nodo 1 (exploración): Generación de múltiples perfiles por stakeholder ────
+async def generar_perfiles_stakeholder(
+    stakeholder: Stakeholder,
+    idea_texto: str,
+    sector: str,
+    pais: str,
+    datos_web: dict,
+    cantidad: int = 4
+) -> list[dict]:
+    """
+    Genera entre 3 y 5 perfiles distintos para un mismo stakeholder,
+    cada uno con variaciones demográficas, actitudinales y contextuales.
+    """
+    prompt = f"""Eres un motor de construcción de perfiles humanos sintéticos de alta fidelidad.
+
+IDEA DEL EMPRENDEDOR:
+{idea_texto}
+
+STAKEHOLDER A PERFILAR: {stakeholder.nombre}
+Descripción: {stakeholder.descripcion}
+Tipo: {stakeholder.tipo}
+
+CONTEXTO DEL MERCADO:
+- Sector: {sector}
+- País: {pais}
+- Tendencias: {datos_web.get("tendencias_sector", "no disponible")}
+- Comportamiento real: {datos_web.get("comportamiento_usuario", "no disponible")}
+- Barreras reales: {", ".join(datos_web.get("barreras_reales", []))}
+- Contexto cultural: {datos_web.get("contexto_cultural", "no disponible")}
+
+Genera exactamente {cantidad} perfiles DISTINTOS de "{stakeholder.nombre}".
+Cada perfil debe representar una variante real y diferente del mismo tipo de persona:
+varía edad, nivel socioeconómico, actitud hacia la tecnología, contexto familiar, etc.
+
+Responde ÚNICAMENTE con un JSON:
+{{
+  "perfiles": [
+    {{
+      "variante_descripcion": "qué hace ÚNICO a este perfil respecto a los otros (ej: padre joven con recursos limitados)",
+      "nombre": "nombre completo creíble para {pais}",
+      "edad": número entero,
+      "ubicacion": "ciudad, {pais}",
+      "ocupacion": "ocupación específica",
+      "autopercepcion": "cómo se ve a sí mismo en 1-2 oraciones",
+      "creencias_centrales": ["creencia 1", "creencia 2", "creencia 3"],
+      "miedo_oculto": "temor profundo no expresado abiertamente",
+      "job_funcional": "tarea práctica que necesita resolver",
+      "job_emocional": "sentimiento que busca alcanzar o evitar",
+      "job_social": "cómo quiere ser percibido por otros",
+      "fricciones": ["fricción 1 específica", "fricción 2 específica"],
+      "temores": ["temor 1 concreto", "temor 2 concreto"],
+      "resultado_deseado": "qué éxito concreto busca en relación a esta idea",
+      "forma_de_hablar": {{
+        "formalidad": "casual|profesional|mezclado",
+        "estructura_frases": "cortas y directas|largas y elaboradas|mixto",
+        "vocabulario_tipico": ["palabra1", "expresión2"],
+        "tono_emocional": "descripción del tono",
+        "frases_caracteristicas": ["frase típica 1", "frase típica 2"]
+      }}
+    }}
+  ]
+}}
+
+IMPORTANTE: Los perfiles deben ser REALMENTE distintos entre sí — no variaciones superficiales.
+Fundamenta cada perfil en los datos reales del mercado.
+NO incluyas texto fuera del JSON."""
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        max_tokens=3000,
+        temperature=0.85
+    )
+
+    data = json.loads(response.choices[0].message.content)
+    perfiles = data["perfiles"]
+
+    for p in perfiles:
+        p["stakeholder_id"] = stakeholder.id
+        p["stakeholder_nombre"] = stakeholder.nombre
+
+    return perfiles
+
+
+# ── Nodo 2 (exploración): Conversación con un perfil sintético ────────────────
+async def conversar_con_perfil(
+    perfil: dict,
+    idea_texto: str,
+    historial: list[dict],
+    pregunta: str
+) -> dict:
+    """
+    El emprendedor hace una pregunta; el perfil sintético responde
+    desde su perspectiva e identidad.
+    Extrae insights JTBD cuando hay al menos 4 mensajes en el historial.
+    """
+    sistema = f"""Eres {perfil['nombre']}, {perfil['ocupacion']} en {perfil['ubicacion']}.
+
+TU IDENTIDAD:
+- Autopercepción: {perfil['autopercepcion']}
+- Creencias: {', '.join(perfil.get('creencias_centrales', []))}
+- Miedo oculto: {perfil['miedo_oculto']}
+- Job funcional: {perfil['job_funcional']}
+- Job emocional: {perfil['job_emocional']}
+- Job social: {perfil['job_social']}
+- Fricciones: {', '.join(perfil.get('fricciones', []))}
+- Temores: {', '.join(perfil.get('temores', []))}
+
+TU FORMA DE HABLAR:
+- Formalidad: {perfil['forma_de_hablar']['formalidad']}
+- Tono: {perfil['forma_de_hablar']['tono_emocional']}
+- Frases típicas: {', '.join(perfil['forma_de_hablar']['frases_caracteristicas'])}
+
+CONTEXTO: El emprendedor te está entrevistando sobre esta idea: {idea_texto}
+
+REGLAS ESTRICTAS:
+- Habla SIEMPRE en primera persona como ese personaje
+- NO menciones que eres una IA
+- Responde desde tu experiencia de vida real — no como experto en el negocio
+- Sé honesto: si algo te preocupa, dilo. Si no lo entiendes, pregunta
+- Máximo 4-5 oraciones por respuesta
+- Usa tu vocabulario y tono característico"""
+
+    mensajes = [{"role": "system", "content": sistema}]
+
+    for msg in historial:
+        rol_llm = "user" if msg["rol"] == "emprendedor" else "assistant"
+        mensajes.append({"role": rol_llm, "content": msg["contenido"]})
+
+    mensajes.append({"role": "user", "content": pregunta})
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=mensajes,
+        max_tokens=400,
+        temperature=0.85
+    )
+
+    respuesta = response.choices[0].message.content
+
+    insights = None
+    if len(historial) >= 4:
+        insights = await _extraer_insights_jtbd(perfil, historial + [
+            {"rol": "emprendedor", "contenido": pregunta},
+            {"rol": "perfil", "contenido": respuesta}
+        ], idea_texto)
+
+    return {"respuesta": respuesta, "insights_jtbd": insights}
+
+
+async def _extraer_insights_jtbd(
+    perfil: dict,
+    historial: list[dict],
+    idea_texto: str
+) -> dict:
+    """Extrae insights estructurados JTBD de la conversación acumulada."""
+    transcripcion = "\n".join(
+        f"{'Emprendedor' if m['rol'] == 'emprendedor' else perfil['nombre']}: {m['contenido']}"
+        for m in historial
+    )
+
+    prompt = f"""Analiza esta conversación de entrevista de usuario y extrae los insights clave.
+
+PERFIL ENTREVISTADO: {perfil['nombre']}, {perfil['ocupacion']}
+IDEA EVALUADA: {idea_texto}
+
+CONVERSACIÓN:
+{transcripcion}
+
+Responde ÚNICAMENTE con un JSON:
+{{
+  "job_funcional": "tarea concreta que emerge de la conversación",
+  "job_emocional": "sentimiento o estado emocional que busca",
+  "job_social": "cómo quiere ser percibido",
+  "fricciones": ["fricción 1 mencionada o implícita", "fricción 2"],
+  "temores": ["temor 1 revelado", "temor 2"],
+  "resultado_deseado": "qué éxito concreto busca",
+  "cita_clave": "frase textual más reveladora del entrevistado",
+  "nivel_confianza": 0.8
+}}"""
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        max_tokens=600,
+        temperature=0.2
+    )
+
+    return json.loads(response.choices[0].message.content)
+
+
+# ── Nodo 3 (exploración): Detección de patrones por stakeholder ───────────────
+async def detectar_patrones(
+    stakeholder_id: str,
+    stakeholder_nombre: str,
+    idea_texto: str,
+    insights_por_perfil: list[dict]
+) -> dict:
+    """
+    Analiza los insights de múltiples perfiles del mismo stakeholder,
+    encuentra patrones comunes, divergencias y el job principal del segmento.
+    """
+    insights_texto = ""
+    for i, ins in enumerate(insights_por_perfil, 1):
+        insights_texto += f"\n--- Perfil {i} ---\n"
+        insights_texto += f"Job funcional: {ins.get('job_funcional', '')}\n"
+        insights_texto += f"Job emocional: {ins.get('job_emocional', '')}\n"
+        insights_texto += f"Job social: {ins.get('job_social', '')}\n"
+        insights_texto += f"Fricciones: {', '.join(ins.get('fricciones', []))}\n"
+        insights_texto += f"Temores: {', '.join(ins.get('temores', []))}\n"
+        insights_texto += f"Resultado deseado: {ins.get('resultado_deseado', '')}\n"
+        if ins.get('cita_clave'):
+            insights_texto += f"Cita clave: \"{ins['cita_clave']}\"\n"
+
+    prompt = f"""Eres un analista experto en síntesis de investigación de usuarios.
+
+STAKEHOLDER ANALIZADO: {stakeholder_nombre}
+IDEA DEL EMPRENDEDOR: {idea_texto}
+
+INSIGHTS DE {len(insights_por_perfil)} PERFILES DISTINTOS:
+{insights_texto}
+
+Analiza estos insights y encuentra patrones. No todos los perfiles tienen que coincidir —
+las divergencias son igual de valiosas que los acuerdos.
+
+Responde ÚNICAMENTE con un JSON:
+{{
+  "job_principal": "el job to be done más importante y compartido por este segmento",
+  "patrones_comunes": [
+    "patrón 1 que aparece en mayoría de perfiles",
+    "patrón 2 compartido"
+  ],
+  "divergencias": [
+    "aspecto donde los perfiles difieren significativamente",
+    "otra divergencia importante"
+  ],
+  "fricciones_criticas": [
+    "fricción que bloquea la adopción mencionada por varios perfiles",
+    "otra fricción crítica"
+  ],
+  "oportunidad_clave": "la oportunidad más clara que revelan estos insights",
+  "segmentos_identificados": [
+    {{
+      "nombre": "Sub-segmento A",
+      "descripcion": "quiénes son y qué los define",
+      "job_especifico": "su job particular dentro del stakeholder"
+    }}
+  ]
+}}"""
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        max_tokens=1000,
+        temperature=0.3
+    )
+
+    result = json.loads(response.choices[0].message.content)
+    result["stakeholder_id"] = stakeholder_id
+    return result
+
+
+# ── Síntesis de exploración ───────────────────────────────────────────────────
+async def sintetizar_exploracion(datos: SintesisInput) -> SintesisExploracion:
+    """
+    Recibe el historial completo de todas las conversaciones de la sesión de exploración
+    y genera un informe de síntesis estructurado con jobs, patrones, fricciones y
+    una validación del problema desde múltiples perspectivas.
+    """
+    # Construir resumen de conversaciones para el prompt
+    total_perfiles = 0
+    resumen_conversaciones = ""
+
+    for conv in datos.conversaciones:
+        resumen_conversaciones += f"\n{'='*50}\n"
+        resumen_conversaciones += f"STAKEHOLDER: {conv.stakeholder_nombre}\n"
+        resumen_conversaciones += f"{'='*50}\n"
+
+        for perfil in conv.perfiles:
+            total_perfiles += 1
+            resumen_conversaciones += f"\nPerfil: {perfil.nombre} ({perfil.ocupacion})\n"
+            resumen_conversaciones += f"Variante: {perfil.variante_descripcion}\n"
+
+            # Incluir insights JTBD si están disponibles (más compacto que el historial crudo)
+            if perfil.insights_jtbd:
+                ins = perfil.insights_jtbd
+                resumen_conversaciones += f"  Job funcional: {ins.get('job_funcional', '')}\n"
+                resumen_conversaciones += f"  Job emocional: {ins.get('job_emocional', '')}\n"
+                resumen_conversaciones += f"  Job social: {ins.get('job_social', '')}\n"
+                resumen_conversaciones += f"  Fricciones: {', '.join(ins.get('fricciones', []))}\n"
+                resumen_conversaciones += f"  Temores: {', '.join(ins.get('temores', []))}\n"
+                resumen_conversaciones += f"  Resultado deseado: {ins.get('resultado_deseado', '')}\n"
+                if ins.get('cita_clave'):
+                    resumen_conversaciones += f"  Cita clave: \"{ins['cita_clave']}\"\n"
+            else:
+                # Si no hay insights extraídos, incluir las últimas líneas del historial
+                for msg in perfil.historial[-6:]:
+                    rol_label = "Emprendedor" if msg.get("rol") == "emprendedor" else perfil.nombre
+                    resumen_conversaciones += f"  {rol_label}: {msg.get('contenido', '')[:200]}\n"
+
+    prompt = f"""Eres un investigador de UX y Customer Discovery senior. Acabas de supervisar una sesión
+completa de entrevistas con usuarios sintéticos para validar una idea de negocio.
+
+IDEA DEL EMPRENDEDOR:
+{datos.idea_texto}
+
+RESUMEN DE {total_perfiles} PERFILES ENTREVISTADOS EN {len(datos.conversaciones)} SEGMENTOS:
+{resumen_conversaciones}
+
+Analiza toda esta información y genera el informe de síntesis de exploración.
+Sé específico, usa evidencia concreta de las conversaciones y sé honesto sobre
+el nivel de validación del problema.
+
+Responde ÚNICAMENTE con un JSON con esta estructura:
+{{
+  "resumen_problema": "síntesis clara del problema que estos usuarios realmente tienen, en 2-3 oraciones",
+  "jobs_principales": [
+    {{
+      "stakeholder": "nombre del stakeholder",
+      "job_funcional": "tarea práctica que necesitan completar",
+      "job_emocional": "sentimiento que buscan alcanzar o evitar",
+      "job_social": "cómo quieren ser percibidos"
+    }}
+  ],
+  "fricciones_criticas": [
+    "fricción que aparece en múltiples perfiles y bloquea la adopción"
+  ],
+  "temores_recurrentes": [
+    "temor que se repite entre distintos perfiles"
+  ],
+  "patrones_por_stakeholder": [
+    {{
+      "stakeholder": "nombre del stakeholder",
+      "patron": "patrón de comportamiento o actitud detectado",
+      "evidencia": "cita textual o paráfrasis de un perfil que lo respalda"
+    }}
+  ],
+  "oportunidades_detectadas": [
+    "oportunidad concreta que revelan los insights"
+  ],
+  "validacion_problema": "validado|parcial|no_validado",
+  "nivel_confianza": 0.0,
+  "recomendacion_siguiente_paso": "qué debería hacer el emprendedor ahora con estos hallazgos",
+  "total_perfiles_entrevistados": {total_perfiles},
+  "total_stakeholders": {len(datos.conversaciones)}
+}}
+
+CRITERIOS PARA validacion_problema:
+- "validado": la mayoría de perfiles confirman el problema con evidencia concreta
+- "parcial": algunos perfiles confirman el problema pero hay inconsistencias o el problema varía por segmento
+- "no_validado": los perfiles no muestran evidencia suficiente del problema
+
+nivel_confianza: número entre 0.0 y 1.0 basado en la consistencia y profundidad de las evidencias.
+NO incluyas texto fuera del JSON."""
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        max_tokens=2000,
+        temperature=0.3
+    )
+
+    data = json.loads(response.choices[0].message.content)
+
+    # Asegurar campos enteros correctos
+    data["total_perfiles_entrevistados"] = total_perfiles
+    data["total_stakeholders"] = len(datos.conversaciones)
+
+    return SintesisExploracion(**data)

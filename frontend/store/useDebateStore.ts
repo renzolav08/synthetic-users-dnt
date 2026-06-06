@@ -55,12 +55,14 @@ interface DebateStore {
   argumentos: Argumento[]
   arbol: ArbolArgumentos | null
   error: string | null
+  insights_exploracion: Record<string, unknown> | null
   setIdea: (idea: string) => void
   setEstado: (estado: Estado) => void
   setContexto: (contexto: Contexto) => void
   addArgumento: (arg: Argumento) => void
   setArbol: (arbol: ArbolArgumentos) => void
   setError: (error: string) => void
+  setInsightsExploracion: (insights: Record<string, unknown> | null) => void
   reset: () => void
 }
 
@@ -71,14 +73,16 @@ export const useDebateStore = create<DebateStore>((set) => ({
   argumentos: [],
   arbol: null,
   error: null,
+  insights_exploracion: null,
   setIdea: (idea) => set({ idea }),
   setEstado: (estado) => set({ estado }),
   setContexto: (contexto) => set({ contexto }),
   addArgumento: (arg) => set((s) => ({ argumentos: [...s.argumentos, arg] })),
   setArbol: (arbol) => set({ arbol }),
   setError: (error) => set({ error, estado: 'error' }),
+  setInsightsExploracion: (insights) => set({ insights_exploracion: insights }),
   reset: () => set({
     idea: '', estado: 'idle', contexto: null,
-    argumentos: [], arbol: null, error: null
+    argumentos: [], arbol: null, error: null, insights_exploracion: null,
   }),
 }))
