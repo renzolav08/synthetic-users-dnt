@@ -183,8 +183,7 @@ export default function DebatePage() {
                 >
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
-                      <span className="font-semibold text-white text-sm">{arg.agente_nombre}</span>
-                      <span className="ml-2 text-xs text-gray-400">{arg.agente_rol}</span>
+                      <span className="font-semibold text-white text-sm">{arg.agente_rol}</span>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className={`text-xs font-medium ${COLOR_POSICION[arg.posicion] || 'text-gray-400'}`}>
