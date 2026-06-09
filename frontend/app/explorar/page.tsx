@@ -573,11 +573,20 @@ export default function ExplorarPage() {
     }
   }
 
-  // Contar cuántas conversaciones hay en total (proteger contra undefined)
-  const historialSeguro = historialPor ?? {}
-  const totalConversaciones = Object.keys(historialSeguro).filter(
-    k => (historialSeguro[k] ?? []).length > 0
-  ).length
+  // ── Progreso real de exploración ─────────────────────────────────────────────
+  const MINIMO_INSIGHTS_TOTAL   = 4   // perfiles con insights completos (4+ mensajes)
+  const MINIMO_STAKEHOLDERS     = 2   // segmentos distintos cubiertos con ≥2 insights c/u
+
+  const insightsPorSegmento = (stakeholders ?? []).map(sk => {
+    const perfiles = perfilesPor[sk.id] ?? []
+    const conInsights = perfiles.filter((_, idx) => !!insightsPor[`${sk.id}::${idx}`]).length
+    return { id: sk.id, nombre: sk.nombre, conInsights }
+  })
+
+  const totalInsightosCompletos   = insightsPorSegmento.reduce((s, x) => s + x.conInsights, 0)
+  const segmentosConDosInsights   = insightsPorSegmento.filter(x => x.conInsights >= 2).length
+  const puedeFinalizarExploracion = totalInsightosCompletos >= MINIMO_INSIGHTS_TOTAL &&
+                                    segmentosConDosInsights >= MINIMO_STAKEHOLDERS
 
   const skActivo = (stakeholders ?? []).find(s => s.id === stakeholderActivo) ?? null
   const perfilesActivos = skActivo ? (perfilesPor[skActivo.id] ?? []) : []
@@ -602,17 +611,58 @@ export default function ExplorarPage() {
           <p className="text-gray-400 text-xs text-center truncate">{idea}</p>
         </div>
 
-        <div className="flex items-center gap-2">
-          {totalConversaciones > 0 && (
-            <span className="text-xs text-gray-500">
-              {totalConversaciones} conversación{totalConversaciones !== 1 ? 'es' : ''}
-            </span>
+        <div className="flex items-center gap-3">
+
+          {/* Indicador de progreso */}
+          {stakeholders.length > 0 && !cargandoSintesis && (
+            <div className="flex items-center gap-2">
+              {/* Perfiles con insights */}
+              <div className="flex items-center gap-1.5" title="Perfiles con insights completos (mín. 4 mensajes c/u)">
+                <div className="flex gap-0.5">
+                  {Array.from({ length: MINIMO_INSIGHTS_TOTAL }).map((_, i) => (
+                    <span
+                      key={i}
+                      className={`w-2 h-2 rounded-full ${
+                        i < totalInsightosCompletos ? 'bg-green-400' : 'bg-gray-700'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <span className="text-xs text-gray-500">
+                  {totalInsightosCompletos}/{MINIMO_INSIGHTS_TOTAL} perfiles
+                </span>
+              </div>
+
+              <span className="text-gray-700">·</span>
+
+              {/* Segmentos cubiertos */}
+              <div className="flex items-center gap-1.5" title="Segmentos con ≥2 perfiles entrevistados">
+                <div className="flex gap-0.5">
+                  {Array.from({ length: MINIMO_STAKEHOLDERS }).map((_, i) => (
+                    <span
+                      key={i}
+                      className={`w-2 h-2 rounded-full ${
+                        i < segmentosConDosInsights ? 'bg-blue-400' : 'bg-gray-700'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <span className="text-xs text-gray-500">
+                  {segmentosConDosInsights}/{MINIMO_STAKEHOLDERS} segmentos
+                </span>
+              </div>
+            </div>
           )}
+
           <button
             onClick={finalizarExploracion}
-            disabled={totalConversaciones === 0 || cargandoSintesis}
+            disabled={!puedeFinalizarExploracion || cargandoSintesis}
             className="text-xs bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white px-4 py-1.5 rounded-lg transition font-medium"
-            title={totalConversaciones === 0 ? 'Realiza al menos una conversación para continuar' : ''}
+            title={
+              !puedeFinalizarExploracion
+                ? `Necesitas ${MINIMO_INSIGHTS_TOTAL} perfiles con insights (4+ mensajes c/u) en ${MINIMO_STAKEHOLDERS} segmentos distintos`
+                : ''
+            }
           >
             {cargandoSintesis ? 'Sintetizando...' : 'Finalizar exploración →'}
           </button>
@@ -710,8 +760,8 @@ export default function ExplorarPage() {
                 Selecciona un perfil para iniciar<br />la entrevista de exploración
               </p>
               <p className="text-gray-600 text-xs text-center max-w-xs">
-                Conversa con al menos 2 perfiles del mismo stakeholder<br />
-                para detectar patrones y jobs to be done
+                Entrevista al menos 2 perfiles por segmento (4+ mensajes c/u)<br />
+                cubriendo 2 segmentos distintos para poder sintetizar
               </p>
             </div>
           )}
