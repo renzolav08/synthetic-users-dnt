@@ -5,17 +5,9 @@ import { useDebateStore } from '@/store/useDebateStore'
 import { useExplorarStore } from '@/store/useExplorarStore'
 import { useRouter } from 'next/navigation'
 
-const ESTADOS_LABEL: Record<string, string> = {
-  analizando: 'Analizando tu idea...',
-  buscando_web: 'Buscando datos reales del mercado...',
-  generando_perfiles: 'Generando perfiles de los agentes...',
-  debatiendo: 'Los agentes están debatiendo tu idea...',
-  consenso: 'Construyendo el árbol de argumentos...',
-}
-
 export default function Home() {
   const [texto, setTexto] = useState('')
-  const { estado, setIdea, setEstado, setContexto, addArgumento, setArbol, setError, reset } = useDebateStore()
+  const { estado } = useDebateStore()
   const explorarStore = useExplorarStore()
   const router = useRouter()
   const cargando = estado !== 'idle' && estado !== 'error'
@@ -23,57 +15,8 @@ export default function Home() {
   function explorarPrimero() {
     if (!texto.trim() || texto.trim().length < 20) return
     explorarStore.reset()
-    // sector y pais se detectarán en la página de exploración vía el Nodo 0
     explorarStore.setIdea(texto, '', '')
     router.push('/explorar')
-  }
-
-  async function evaluarIdea() {
-    if (!texto.trim() || texto.trim().length < 20) return
-    reset()
-    setIdea(texto)
-    setEstado('analizando')
-
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'}/evaluar-stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idea_texto: texto }),
-      })
-
-      if (!res.ok) throw new Error('Error al conectar con el servidor')
-      if (!res.body) throw new Error('Sin respuesta del servidor')
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const { tipo, data } = JSON.parse(line.slice(6))
-            if (tipo === 'contexto') { setContexto(data); setEstado('buscando_web') }
-            else if (tipo === 'datos_web') { setEstado('generando_perfiles') }
-            else if (tipo === 'perfiles_listos') { setEstado('debatiendo') }
-            else if (tipo === 'argumento') { addArgumento(data) }
-            else if (tipo === 'consenso') { setArbol(data); setEstado('consenso') }
-            else if (tipo === 'fin') { setEstado('completado'); router.push('/debate') }
-          } catch {}
-        }
-      }
-
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Error inesperado'
-      setError(msg)
-    }
   }
 
   return (
@@ -124,33 +67,8 @@ export default function Home() {
           </span>
         </div>
 
-        {/* Estado de carga */}
-        {cargando && (
-          <div className="mb-5 bg-blue-950 border border-blue-900 rounded-xl px-4 py-3 flex items-center gap-3">
-            <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
-            <div>
-              <p className="text-blue-300 text-sm font-medium">
-                {ESTADOS_LABEL[estado] || 'Procesando...'}
-              </p>
-              <p className="text-blue-400/60 text-xs mt-0.5">
-                Esto toma entre 60 y 90 segundos — no cierres la ventana
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Error */}
-        {estado === 'error' && (
-          <div className="mb-5 bg-red-950 border border-red-900 rounded-xl px-4 py-3">
-            <p className="text-red-400 text-sm">
-              Hubo un error al conectar con el servidor. Asegúrate de que el backend está corriendo.
-            </p>
-          </div>
-        )}
-
         {/* Botones */}
         <div className="flex flex-col gap-3">
-          {/* Opción principal: explorar primero */}
           <button
             onClick={explorarPrimero}
             disabled={cargando || texto.trim().length < 20}
@@ -159,26 +77,12 @@ export default function Home() {
             <span>💬</span>
             Explorar con usuarios sintéticos →
           </button>
-
-          {/* Opción secundaria: ir directo al debate */}
-          <div className="space-y-1">
-            <button
-              onClick={evaluarIdea}
-              disabled={cargando || texto.trim().length < 20}
-              className="w-full bg-gray-800 hover:bg-gray-700 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed text-gray-300 font-medium py-2.5 rounded-xl border border-gray-700 transition-all duration-200 text-sm"
-            >
-              {cargando ? 'Evaluando...' : 'Ir directo al debate multiagente →'}
-            </button>
-            <p className="text-center text-xs text-gray-600">
-              Úsalo si ya exploraste antes o quieres una evaluación rápida
-            </p>
-          </div>
         </div>
 
         {/* Descripción del flujo */}
         {!cargando && texto.trim().length >= 20 && (
-          <p className="text-center text-xs text-gray-600 mt-1">
-            Explorar = entrevistar perfiles sintéticos por stakeholder · Debate = evaluación adversarial directa
+          <p className="text-center text-xs text-gray-600 mt-4">
+            Paso 1: entrevistas · Paso 2: síntesis · Paso 3: debate multiagente
           </p>
         )}
       </div>

@@ -410,6 +410,13 @@ async def generar_consenso(
         "Analiza el debate y genera el árbol de argumentos estructurado.\n"
         "Ten en cuenta el PESO de cada agente al calcular el consenso "
         "(mayor peso = mayor influencia en la recomendación).\n\n"
+        "Para nivel_confianza usa estos criterios ESTRICTOS:\n"
+        "- 0.85–1.00: mayoría clara de agentes alineados, pocos riesgos críticos, evidencia sólida\n"
+        "- 0.65–0.84: acuerdo moderado, algunos riesgos importantes pero manejables\n"
+        "- 0.45–0.64: posiciones muy divididas, riesgos significativos sin resolver\n"
+        "- 0.20–0.44: mayoría en contra o riesgos críticos que comprometen la viabilidad\n"
+        "Calcula el nivel_confianza a partir de: % de agentes pro vs contra ponderado por sus pesos, "
+        "cantidad de divergencias vs acuerdos, y gravedad de los riesgos mencionados.\n\n"
         "Responde ÚNICAMENTE con un JSON con esta estructura:\n"
         "{\n"
         '  "acuerdos": [\n'
@@ -421,7 +428,7 @@ async def generar_consenso(
         '  "fortalezas_idea": ["fortaleza 1", "fortaleza 2"],\n'
         '  "debilidades_idea": ["debilidad 1", "debilidad 2"],\n'
         '  "recomendacion": "viable|no_viable|condicionalmente_viable",\n'
-        '  "nivel_confianza": 0.75,\n'
+        '  "nivel_confianza": <número real entre 0.0 y 1.0 basado en el análisis>,\n'
         '  "condiciones": ["condición 1 si es condicionalmente viable", "condición 2"],\n'
         '  "resumen_ejecutivo": "resumen del debate en 2-3 oraciones para el emprendedor"\n'
         "}"
