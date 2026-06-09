@@ -196,6 +196,17 @@ export default function DebatePage() {
                     </div>
                   </div>
                   <p className="text-gray-300 text-sm leading-relaxed">{arg.argumento}</p>
+
+                  {/* Fuente del insight de exploración */}
+                  {arg.fuente_insight && (
+                    <div className="mt-3 pt-3 border-t border-white/5 flex items-start gap-2">
+                      <span className="text-purple-400 text-xs flex-shrink-0 mt-0.5">📎</span>
+                      <p className="text-purple-300/80 text-xs italic leading-relaxed">
+                        <span className="not-italic font-medium text-purple-400">Insight de campo: </span>
+                        &ldquo;{arg.fuente_insight}&rdquo;
+                      </p>
+                    </div>
+                  )}
                 </div>
               ))}
 

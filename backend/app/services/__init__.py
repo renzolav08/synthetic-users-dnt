@@ -279,6 +279,15 @@ async def generar_argumento_agente(
             f"Usa esta evidencia de campo para fundamentar tu argumento con datos concretos.\n"
         )
 
+    # Instrucción de citación solo cuando hay insights de exploración
+    instruccion_cita = ""
+    if insights_exploracion:
+        instruccion_cita = (
+            "- Al FINAL de tu argumento, en una línea separada, escribe exactamente:\n"
+            "  INSIGHT_USADO: [la frase o dato concreto de la evidencia de campo que más respalda tu punto]\n"
+            "  Si no usas ningún insight de exploración escribe: INSIGHT_USADO: ninguno\n"
+        )
+
     prompt = (
         f"Eres {perfil['nombre']}, {perfil['ocupacion']} en {perfil['ubicacion']}.\n\n"
         f"TU PERSONALIDAD:\n"
@@ -302,18 +311,30 @@ async def generar_argumento_agente(
         "- Menciona al menos UN punto débil concreto de la idea\n"
         "- Si hay evidencia de entrevistas, úsala explícitamente\n"
         "- Responde en máximo 4 oraciones directas y contundentes\n"
-        "- NO uses listas ni bullets — habla naturalmente\n\n"
+        "- NO uses listas ni bullets — habla naturalmente\n"
+        f"{instruccion_cita}\n"
         "Ahora da tu argumento sobre esta idea:"
     )
 
     response = await client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=300,
+        max_tokens=350,
         temperature=0.85
     )
 
-    argumento = response.choices[0].message.content
+    argumento_raw = response.choices[0].message.content
+
+    # Separar el argumento de la cita de fuente
+    fuente_insight = None
+    if insights_exploracion and "INSIGHT_USADO:" in argumento_raw:
+        partes = argumento_raw.split("INSIGHT_USADO:")
+        argumento = partes[0].strip()
+        fuente_raw = partes[1].strip().strip('"').strip("'")
+        if fuente_raw.lower() not in ("ninguno", "none", "n/a", ""):
+            fuente_insight = fuente_raw
+    else:
+        argumento = argumento_raw
 
     # Clasificar posición automáticamente
     prompt_clasif = (
@@ -339,7 +360,8 @@ async def generar_argumento_agente(
         "agente_categoria": perfil["categoria"],
         "agente_peso": perfil["peso"],
         "argumento": argumento,
-        "posicion": posicion
+        "posicion": posicion,
+        "fuente_insight": fuente_insight,
     }
 
 

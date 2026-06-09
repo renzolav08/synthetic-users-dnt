@@ -25,6 +25,7 @@ export type Argumento = {
   agente_peso: number
   argumento: string
   posicion: string
+  fuente_insight?: string | null
 }
 
 export type ArbolArgumentos = {
