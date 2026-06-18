@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useExplorarStore, type PerfilSintetico, type Stakeholder, type InsightsJTBD } from '@/store/useExplorarStore'
+import { useSupuestosStore } from '@/store/useSupuestosStore'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
 
@@ -471,6 +472,8 @@ export default function ExplorarPage() {
     setSintesis, setCargandoSintesis, setErrorSintesis,
   } = useExplorarStore()
 
+  const { supuestos } = useSupuestosStore()
+
   // Protección contra undefined en el primer render (hidratación Zustand/Next.js)
   const stakeholders = _stakeholders ?? []
 
@@ -559,7 +562,11 @@ export default function ExplorarPage() {
       const res = await fetch(`${API}/sintetizar-exploracion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idea_texto: idea, conversaciones }),
+        body: JSON.stringify({
+          idea_texto: idea,
+          conversaciones,
+          ...(supuestos.length > 0 && { supuestos }),
+        }),
       })
       if (!res.ok) throw new Error(`Error del servidor: ${res.status}`)
       const data = await res.json()

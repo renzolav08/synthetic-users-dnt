@@ -5,7 +5,8 @@ from typing import Optional, Any
 class IdeaInput(BaseModel):
     idea_texto: str
     team_id: Optional[str] = None
-    insights_exploracion: Optional[dict] = None   # síntesis de exploración para enriquecer el debate
+    insights_exploracion: Optional[dict] = None
+    supuestos_evaluados: Optional[list] = None   # veredictos por supuesto para enriquecer el debate
 
 # ── Contexto detectado por el Nodo 1 ─────────────────────────────────────────
 class AgenteConfig(BaseModel):
@@ -23,6 +24,31 @@ class ContextoDetectado(BaseModel):
     modelo_negocio: str
     riesgos_detectados: list[str]
     agentes: list[AgenteConfig]
+
+
+# ── SUPUESTOS RIESGOSOS (Testing Business Ideas) ─────────────────────────────
+
+class Supuesto(BaseModel):
+    id: str                          # slug único, ej: "adopcion_digital"
+    enunciado: str                   # "Creo que los bodegueros prefieren hacer pedidos digitales"
+    tipo: str                        # "deseabilidad" | "factibilidad" | "viabilidad" | "adaptabilidad"
+    nivel_riesgo: str                # "alto" | "medio" | "bajo"
+    por_que_es_riesgoso: str         # explicación de por qué podría estar equivocado
+    que_confirmaria: str             # qué evidencia concreta lo validaría
+    stakeholders_relevantes: list[str]  # qué stakeholders pueden testearlo
+
+class SupuestosDetectados(BaseModel):
+    idea_texto: str
+    supuestos: list[Supuesto]
+    razonamiento: str
+
+class SupuestoEvaluado(BaseModel):
+    supuesto_id: str
+    enunciado: str
+    tipo: str
+    veredicto: str                   # "validado" | "parcial" | "refutado" | "sin_datos"
+    evidencia: list[str]             # citas textuales de las entrevistas
+    nivel_confianza: float
 
 
 # ── FASE DE EXPLORACIÓN ───────────────────────────────────────────────────────
@@ -115,6 +141,7 @@ class SintesisInput(BaseModel):
     """Entrada para el endpoint de síntesis."""
     idea_texto: str
     conversaciones: list[ConversacionStakeholder]
+    supuestos: Optional[list] = None   # lista de Supuesto para evaluar contra la evidencia
 
 class JobDetectado(BaseModel):
     stakeholder: str
@@ -130,7 +157,7 @@ class PatronStakeholder(BaseModel):
 class SintesisExploracion(BaseModel):
     """Informe de síntesis generado tras la fase de exploración."""
     resumen_problema: str
-    jobs_principales: list[dict]        # JobDetectado como dict para flexibilidad
+    jobs_principales: list[dict]
     fricciones_criticas: list[str]
     temores_recurrentes: list[str]
     patrones_por_stakeholder: list[dict]
@@ -140,3 +167,4 @@ class SintesisExploracion(BaseModel):
     recomendacion_siguiente_paso: str
     total_perfiles_entrevistados: int
     total_stakeholders: int
+    supuestos_evaluados: Optional[list] = None  # SupuestoEvaluado por supuesto testeado

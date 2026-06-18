@@ -12,6 +12,7 @@ from app.services import (
     conversar_con_perfil,
     detectar_patrones,
     sintetizar_exploracion,
+    detectar_supuestos,
 )
 import json
 import asyncio
@@ -132,6 +133,22 @@ async def evaluar_stream(idea: IdeaInput):
             "X-Accel-Buffering": "no"
         }
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SUPUESTOS RIESGOSOS — Testing Business Ideas
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/supuestos")
+async def endpoint_detectar_supuestos(idea: IdeaInput):
+    """
+    Extrae los supuestos riesgosos implícitos en la idea del emprendedor.
+    Basado en Testing Business Ideas (Bland & Osterwalder).
+    Clasifica por tipo: deseabilidad, factibilidad, viabilidad, adaptabilidad.
+    Prioriza por nivel de riesgo: alto, medio, bajo.
+    """
+    resultado = await detectar_supuestos(idea.idea_texto)
+    return resultado
 
 
 # ══════════════════════════════════════════════════════════════════════════════

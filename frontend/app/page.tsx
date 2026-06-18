@@ -3,20 +3,23 @@
 import { useState } from 'react'
 import { useDebateStore } from '@/store/useDebateStore'
 import { useExplorarStore } from '@/store/useExplorarStore'
+import { useSupuestosStore } from '@/store/useSupuestosStore'
 import { useRouter } from 'next/navigation'
 
 export default function Home() {
   const [texto, setTexto] = useState('')
   const { estado } = useDebateStore()
   const explorarStore = useExplorarStore()
+  const supuestosStore = useSupuestosStore()
   const router = useRouter()
   const cargando = estado !== 'idle' && estado !== 'error'
 
   function explorarPrimero() {
     if (!texto.trim() || texto.trim().length < 20) return
     explorarStore.reset()
+    supuestosStore.reset()
     explorarStore.setIdea(texto, '', '')
-    router.push('/explorar')
+    router.push('/supuestos')
   }
 
   return (

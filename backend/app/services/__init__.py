@@ -3,6 +3,7 @@ from tavily import TavilyClient
 from app.schemas import (
     ContextoDetectado, Stakeholder, StakeholdersDetectados,
     SintesisInput, SintesisExploracion,
+    Supuesto, SupuestosDetectados, SupuestoEvaluado,
 )
 from dotenv import load_dotenv
 import asyncio
@@ -279,6 +280,24 @@ async def generar_argumento_agente(
             f"Usa esta evidencia de campo para fundamentar tu argumento con datos concretos.\n"
         )
 
+    # Bloque de supuestos evaluados (Testing Business Ideas)
+    bloque_supuestos = ""
+    if insights_exploracion and insights_exploracion.get("supuestos_evaluados"):
+        sups = insights_exploracion["supuestos_evaluados"]
+        validados  = [s for s in sups if s.get("veredicto") == "validado"]
+        refutados  = [s for s in sups if s.get("veredicto") == "refutado"]
+        parciales  = [s for s in sups if s.get("veredicto") == "parcial"]
+        sin_datos  = [s for s in sups if s.get("veredicto") == "sin_datos"]
+
+        def _fmt(lista): return "; ".join(s.get("enunciado","") for s in lista[:2])
+
+        bloque_supuestos = "\nSUPUESTOS RIESGOSOS EVALUADOS EN CAMPO:\n"
+        if validados:  bloque_supuestos += f"- VALIDADOS: {_fmt(validados)}\n"
+        if refutados:  bloque_supuestos += f"- REFUTADOS: {_fmt(refutados)}\n"
+        if parciales:  bloque_supuestos += f"- PARCIALMENTE VALIDADOS: {_fmt(parciales)}\n"
+        if sin_datos:  bloque_supuestos += f"- SIN DATOS SUFICIENTES: {_fmt(sin_datos)}\n"
+        bloque_supuestos += "Argumenta tomando en cuenta qué supuestos quedaron validados y cuáles no.\n"
+
     # Instrucción de citación solo cuando hay insights de exploración
     instruccion_cita = ""
     if insights_exploracion:
@@ -300,7 +319,8 @@ async def generar_argumento_agente(
         f"- Tono: {perfil['forma_de_hablar']['tono_emocional']}\n"
         f"- Frases típicas tuyas: {', '.join(perfil['forma_de_hablar']['frases_caracteristicas'])}\n\n"
         f"LA IDEA QUE DEBES EVALUAR:\n{idea_texto}\n"
-        f"{bloque_insights}\n"
+        f"{bloque_insights}"
+        f"{bloque_supuestos}\n"
         f"TU ROL EN ESTE DEBATE: {perfil['rol']}\n\n"
         "REGLAS ESTRICTAS:\n"
         "- Habla SIEMPRE en primera persona como ese personaje\n"
@@ -448,6 +468,70 @@ async def generar_consenso(
 # ══════════════════════════════════════════════════════════════════════════════
 # FASE DE EXPLORACIÓN
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ── Supuestos riesgosos (Testing Business Ideas) ─────────────────────────────
+async def detectar_supuestos(idea_texto: str) -> SupuestosDetectados:
+    """
+    Extrae los supuestos riesgosos implícitos en la idea del emprendedor,
+    clasificados por tipo (deseabilidad, factibilidad, viabilidad, adaptabilidad)
+    y priorizados por nivel de riesgo.
+    Basado en la metodología Testing Business Ideas (Bland & Osterwalder).
+    """
+    prompt = f"""Eres un experto en validación de ideas de negocio usando la metodología
+Testing Business Ideas de David Bland y Alex Osterwalder.
+
+Un emprendedor tiene la siguiente idea:
+{idea_texto}
+
+Tu tarea es identificar los SUPUESTOS RIESGOSOS implícitos en esta idea.
+Un supuesto riesgoso es algo que el emprendedor cree que es verdad,
+pero que podría estar equivocado y hundir el negocio si no se valida.
+
+Clasifica cada supuesto según el tipo:
+- "deseabilidad": ¿alguien realmente quiere esto?
+- "factibilidad": ¿se puede construir o ejecutar?
+- "viabilidad": ¿puede generar dinero sosteniblemente?
+- "adaptabilidad": ¿funciona en este contexto cultural, legal o de mercado?
+
+Responde ÚNICAMENTE con un JSON válido:
+{{
+  "razonamiento": "por qué estos son los supuestos más críticos para esta idea",
+  "supuestos": [
+    {{
+      "id": "slug_sin_espacios",
+      "enunciado": "Creo que [supuesto concreto que el emprendedor asume como verdad]",
+      "tipo": "deseabilidad|factibilidad|viabilidad|adaptabilidad",
+      "nivel_riesgo": "alto|medio|bajo",
+      "por_que_es_riesgoso": "qué pasaría si este supuesto es falso",
+      "que_confirmaria": "qué evidencia concreta demostraría que este supuesto es verdad",
+      "stakeholders_relevantes": ["qué tipo de persona puede confirmar o refutar esto"]
+    }}
+  ]
+}}
+
+REGLAS:
+- Identifica entre 4 y 6 supuestos, priorizados de mayor a menor riesgo
+- El enunciado SIEMPRE empieza con "Creo que..."
+- Sé específico: no supuestos genéricos, sino vinculados directamente a ESTA idea
+- Los de tipo "deseabilidad" son usualmente los más críticos para una startup
+- NO incluyas texto fuera del JSON"""
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        max_tokens=1500,
+        temperature=0.4
+    )
+
+    data = json.loads(response.choices[0].message.content)
+    supuestos = [Supuesto(**s) for s in data["supuestos"]]
+    return SupuestosDetectados(
+        idea_texto=idea_texto,
+        supuestos=supuestos,
+        razonamiento=data["razonamiento"]
+    )
+
 
 # ── Nodo 0: Detección de stakeholders ────────────────────────────────────────
 async def detectar_stakeholders(idea_texto: str) -> StakeholdersDetectados:
@@ -880,9 +964,71 @@ NO incluyas texto fuera del JSON."""
     )
 
     data = json.loads(response.choices[0].message.content)
-
-    # Asegurar campos enteros correctos
     data["total_perfiles_entrevistados"] = total_perfiles
     data["total_stakeholders"] = len(datos.conversaciones)
 
+    # Evaluar supuestos si fueron provistos
+    supuestos_evaluados = None
+    if datos.supuestos:
+        supuestos_evaluados = await _evaluar_supuestos(
+            datos.supuestos, resumen_conversaciones, datos.idea_texto
+        )
+    data["supuestos_evaluados"] = supuestos_evaluados
+
     return SintesisExploracion(**data)
+
+
+async def _evaluar_supuestos(
+    supuestos: list,
+    resumen_conversaciones: str,
+    idea_texto: str
+) -> list:
+    """Evalúa cada supuesto contra la evidencia de las conversaciones."""
+    supuestos_texto = "\n".join(
+        f"- [{s['id']}] ({s['tipo']}) {s['enunciado']}" for s in supuestos
+    )
+
+    prompt = f"""Eres un investigador experto en validación de supuestos de negocio.
+
+IDEA: {idea_texto}
+
+SUPUESTOS A EVALUAR:
+{supuestos_texto}
+
+EVIDENCIA DE ENTREVISTAS:
+{resumen_conversaciones[:3000]}
+
+Para cada supuesto, determina si la evidencia lo valida, refuta o es insuficiente.
+
+Responde ÚNICAMENTE con un JSON:
+{{
+  "evaluaciones": [
+    {{
+      "supuesto_id": "id_del_supuesto",
+      "enunciado": "enunciado original",
+      "tipo": "tipo original",
+      "veredicto": "validado|parcial|refutado|sin_datos",
+      "evidencia": ["cita o paráfrasis concreta de entrevista que respalda el veredicto"],
+      "nivel_confianza": 0.0
+    }}
+  ]
+}}
+
+CRITERIOS veredicto:
+- "validado": mayoría de perfiles confirma el supuesto con evidencia directa
+- "parcial": algunos lo confirman, otros lo contradicen
+- "refutado": la evidencia contradice el supuesto
+- "sin_datos": no hubo conversaciones relevantes sobre este tema
+
+nivel_confianza: 0.0-1.0 según cantidad y consistencia de evidencia"""
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        max_tokens=1500,
+        temperature=0.2
+    )
+
+    result = json.loads(response.choices[0].message.content)
+    return result.get("evaluaciones", [])

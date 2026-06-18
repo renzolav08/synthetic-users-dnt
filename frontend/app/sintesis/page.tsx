@@ -17,6 +17,27 @@ const LABEL_VALIDACION: Record<string, string> = {
   no_validado: '✗ No validado',
 }
 
+const COLOR_VEREDICTO: Record<string, string> = {
+  validado:  'bg-green-900/40 border-green-700 text-green-300',
+  parcial:   'bg-yellow-900/40 border-yellow-700 text-yellow-300',
+  refutado:  'bg-red-900/40 border-red-700 text-red-300',
+  sin_datos: 'bg-gray-800 border-gray-700 text-gray-400',
+}
+
+const ICONO_VEREDICTO: Record<string, string> = {
+  validado:  '✓',
+  parcial:   '◐',
+  refutado:  '✗',
+  sin_datos: '○',
+}
+
+const LABEL_VEREDICTO: Record<string, string> = {
+  validado:  'Validado',
+  parcial:   'Parcial',
+  refutado:  'Refutado',
+  sin_datos: 'Sin datos',
+}
+
 export default function SintesisPage() {
   const router = useRouter()
   const { idea, sintesis, cargandoSintesis, errorSintesis } = useExplorarStore()
@@ -91,6 +112,8 @@ export default function SintesisPage() {
           ← Volver a explorar
         </button>
         <div className="flex items-center gap-2 text-xs text-gray-500">
+          <span className="text-gray-600">Supuestos</span>
+          <span className="text-gray-700">→</span>
           <span className="text-gray-600">Explorar</span>
           <span className="text-gray-700">→</span>
           <span className="text-white font-medium">Síntesis</span>
@@ -230,6 +253,46 @@ export default function SintesisPage() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Mapa de supuestos evaluados */}
+      {sintesis.supuestos_evaluados && sintesis.supuestos_evaluados.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            Mapa de supuestos
+            <span className="text-xs font-normal text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full">
+              Testing Business Ideas
+            </span>
+          </h2>
+          <p className="text-gray-500 text-xs">
+            Cada supuesto fue puesto a prueba durante las entrevistas de exploración.
+          </p>
+          <div className="space-y-3">
+            {sintesis.supuestos_evaluados.map((sup: {
+              supuesto_id: string; enunciado: string; tipo: string;
+              veredicto: string; evidencia: string[]; nivel_confianza: number
+            }, i: number) => (
+              <div key={i} className={`border rounded-xl p-4 ${COLOR_VEREDICTO[sup.veredicto] ?? 'bg-gray-900 border-gray-700'}`}>
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <p className="text-sm font-medium leading-relaxed flex-1">{sup.enunciado}</p>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${COLOR_VEREDICTO[sup.veredicto]}`}>
+                      {ICONO_VEREDICTO[sup.veredicto]} {LABEL_VEREDICTO[sup.veredicto]}
+                    </span>
+                    <span className="text-xs opacity-60">{(sup.nivel_confianza * 100).toFixed(0)}%</span>
+                  </div>
+                </div>
+                {sup.evidencia.length > 0 && (
+                  <div className="space-y-1 mt-2 pt-2 border-t border-white/10">
+                    {sup.evidencia.slice(0, 2).map((ev: string, j: number) => (
+                      <p key={j} className="text-xs opacity-75 italic">"{ev}"</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
