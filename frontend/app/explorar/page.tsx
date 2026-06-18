@@ -87,6 +87,7 @@ function PerfilesPanel({
     .filter(Boolean)
 
   const [generandoMas, setGenerandoMas] = useState(false)
+  const [errorMas, setErrorMas] = useState<string | null>(null)
 
   useEffect(() => {
     if (perfiles.length > 0 || cargando) return
@@ -120,6 +121,7 @@ function PerfilesPanel({
 
   async function generarMasPerfiles() {
     setGenerandoMas(true)
+    setErrorMas(null)
     try {
       const res = await fetch(`${API}/explorar/perfiles-stakeholder`, {
         method: 'POST',
@@ -132,10 +134,12 @@ function PerfilesPanel({
           cantidad: 2,
         }),
       })
+      if (!res.ok) throw new Error(`Error ${res.status}: ${res.statusText}`)
       const data = await res.json()
+      if (!data.perfiles?.length) throw new Error('El servidor no devolvió perfiles')
       appendPerfilesPor(stakeholder.id, data.perfiles)
-    } catch {
-      // silencioso
+    } catch (e: unknown) {
+      setErrorMas(e instanceof Error ? e.message : 'Error al generar perfiles')
     } finally {
       setGenerandoMas(false)
     }
@@ -199,6 +203,12 @@ function PerfilesPanel({
           )}
         </div>
       </div>
+
+      {errorMas && (
+        <p className="text-red-400 text-xs bg-red-950/40 border border-red-800 rounded-lg px-3 py-2">
+          ⚠ {errorMas}
+        </p>
+      )}
 
       {/* Preguntas sugeridas */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
