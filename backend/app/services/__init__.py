@@ -34,20 +34,31 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura exacta:
   "modelo_negocio": "tipo de modelo de negocio",
   "riesgos_detectados": ["riesgo 1", "riesgo 2", "riesgo 3"],
   "agentes": [
-    {{"rol": "Usuario Objetivo", "tipo": "esencial", "peso": 0.20, "categoria": "M"}},
-    {{"rol": "Analista de Negocio", "tipo": "esencial", "peso": 0.20, "categoria": "E"}},
-    {{"rol": "Experto Técnico", "tipo": "esencial", "peso": 0.20, "categoria": "E"}},
-    {{"rol": "Analista de Contexto", "tipo": "esencial", "peso": 0.20, "categoria": "E"}},
-    {{"rol": "Analista de Riesgos", "tipo": "esencial", "peso": 0.20, "categoria": "E"}}
+    {{"rol": "rol específico para este sector", "tipo": "esencial", "peso": 0.20, "categoria": "M o E"}}
   ]
 }}
 
-REGLAS:
-- Los 5 agentes esenciales SIEMPRE deben estar presentes
-- Si el proyecto es digital/app agrega "Analista de Crecimiento" con peso 0.10
-- Si requiere regulación agrega "Asesor Legal" con peso 0.10
-- Si hay sector muy específico agrega "Especialista de Rubro" con peso 0.10
-- La suma de pesos debe ser exactamente 1.0
+REGLAS PARA LOS AGENTES (genera entre 5 y 7):
+- categoria "M" = perspectiva del mercado/usuario/consumidor (habla desde la vivencia)
+- categoria "E" = perspectiva de experto/especialista (habla desde el conocimiento técnico)
+- SIEMPRE incluye al menos 1 agente "M" que represente al usuario/cliente final con un nombre de rol
+  específico para el sector (ej: "Madre trabajadora", "Estudiante universitario", "Dueño de bodega")
+- SIEMPRE incluye un agente que evalúe la viabilidad comercial del modelo de negocio
+- SIEMPRE incluye un agente técnico que evalúe la factibilidad de implementación
+- SIEMPRE incluye un agente que analice el contexto local, cultural y competitivo
+- SIEMPRE incluye un agente de riesgos específicos del sector
+- AGREGA agentes especializados según el sector:
+  * salud/medicina → médico, paciente, regulador sanitario
+  * educación → docente, director institucional, estudiante
+  * finanzas/fintech → usuario financiero, regulador financiero, analista de crédito
+  * retail/comercio → proveedor, operador logístico, consumidor
+  * agro/campo → agricultor, distribuidor, técnico agropecuario
+  * legal → abogado, cliente, regulador
+  * construcción → contratista, propietario, inspector
+  * turismo → viajero, operador turístico, gestor local
+  * etc. — usa roles que generarán el debate más valioso para ESTA idea específica
+- La suma de pesos debe ser exactamente 1.0 (distribúyelos equitativamente entre 5-7 agentes)
+- Los roles deben ser CONCRETOS y ESPECÍFICOS para el sector, no genéricos
 - NO incluyas texto fuera del JSON"""
 
     response = await client.chat.completions.create(
@@ -68,6 +79,7 @@ async def buscar_contexto_web(contexto: ContextoDetectado) -> dict:
         f"{contexto.sector} {contexto.pais} tendencias mercado 2024 2025",
         f"consumidor {contexto.usuarios_objetivo} {contexto.pais} comportamiento",
         f"barreras adopcion {contexto.sector} {contexto.pais} problemas",
+        f"competidores startups {contexto.sector} {contexto.pais} soluciones alternativas",
     ]
 
     resultados = {}
@@ -119,7 +131,8 @@ Responde UNICAMENTE con un JSON:
   "comportamiento_usuario": "como se comporta realmente el usuario objetivo",
   "barreras_reales": ["barrera 1 con evidencia", "barrera 2 con evidencia"],
   "oportunidades": "oportunidades reales detectadas en el mercado",
-  "contexto_cultural": "aspectos culturales y locales relevantes"
+  "contexto_cultural": "aspectos culturales y locales relevantes",
+  "competidores_detectados": ["nombre o descripcion breve del competidor/alternativa 1", "competidor 2"]
 }}"""
 
     response = await client.chat.completions.create(
@@ -182,6 +195,7 @@ DATOS REALES DEL MERCADO (fundamenta el perfil en esto):
 - Comportamiento real: {datos_web.get("comportamiento_usuario", "")}
 - Barreras reales: {", ".join(datos_web.get("barreras_reales", []))}
 - Contexto cultural: {datos_web.get("contexto_cultural", "")}
+- Competidores/alternativas: {", ".join(datos_web.get("competidores_detectados", [])) or "no detectados"}
 
 Responde ÚNICAMENTE con un JSON con esta estructura:
 {{
@@ -271,12 +285,15 @@ async def generar_argumento_agente(
             for j in jobs[:3]
         )
         fricciones = ", ".join(insights_exploracion.get("fricciones_criticas", [])[:3])
+        competidores = insights_exploracion.get("competidores_detectados", [])
+        comp_str = ", ".join(competidores[:3]) if competidores else "no identificados"
         bloque_insights = (
             f"\nEVIDENCIA DE ENTREVISTAS CON USUARIOS REALES (considera esto antes de argumentar):\n"
             f"- Problema validado: {insights_exploracion.get('resumen_problema', '')}\n"
             f"- Jobs principales detectados: {jobs_str}\n"
             f"- Fricciones críticas: {fricciones}\n"
             f"- Nivel de validación: {insights_exploracion.get('validacion_problema', '')}\n"
+            f"- Competidores/alternativas en el mercado: {comp_str}\n"
             f"Usa esta evidencia de campo para fundamentar tu argumento con datos concretos.\n"
         )
 
@@ -626,6 +643,7 @@ CONTEXTO DEL MERCADO:
 - Comportamiento real: {datos_web.get("comportamiento_usuario", "no disponible")}
 - Barreras reales: {", ".join(datos_web.get("barreras_reales", []))}
 - Contexto cultural: {datos_web.get("contexto_cultural", "no disponible")}
+- Competidores/alternativas actuales: {", ".join(datos_web.get("competidores_detectados", [])) or "no detectados"}
 
 Genera exactamente {cantidad} perfiles DISTINTOS de "{stakeholder.nombre}".
 Cada perfil debe representar una variante real y diferente del mismo tipo de persona:

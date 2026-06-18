@@ -72,9 +72,9 @@ function PerfilesPanel({
   perfilActivoIdx: number | null
   onSelectPerfil: (idx: number) => void
 }) {
-  const { perfilesPor, cargandoPerfilesPor, setPerfilesPor, setCargandoPerfilesPor,
-          patronesPor, cargandoPatronesPor, setPatronesPor, setCargandoPatronesPor,
-          historialPor, insightsPor } = useExplorarStore()
+  const { perfilesPor, cargandoPerfilesPor, setPerfilesPor, appendPerfilesPor,
+          setCargandoPerfilesPor, patronesPor, cargandoPatronesPor, setPatronesPor,
+          setCargandoPatronesPor, historialPor, insightsPor } = useExplorarStore()
 
   const perfiles = perfilesPor[stakeholder.id] ?? []
   const cargando = cargandoPerfilesPor[stakeholder.id] ?? false
@@ -85,6 +85,8 @@ function PerfilesPanel({
   const insightsDisponibles = perfiles
     .map((_, idx) => insightsPor[`${stakeholder.id}::${idx}`])
     .filter(Boolean)
+
+  const [generandoMas, setGenerandoMas] = useState(false)
 
   useEffect(() => {
     if (perfiles.length > 0 || cargando) return
@@ -115,6 +117,29 @@ function PerfilesPanel({
     cargar()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stakeholder.id])
+
+  async function generarMasPerfiles() {
+    setGenerandoMas(true)
+    try {
+      const res = await fetch(`${API}/explorar/perfiles-stakeholder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idea_texto: idea,
+          stakeholder: stakeholder,
+          sector,
+          pais,
+          cantidad: 2,
+        }),
+      })
+      const data = await res.json()
+      appendPerfilesPor(stakeholder.id, data.perfiles)
+    } catch {
+      // silencioso
+    } finally {
+      setGenerandoMas(false)
+    }
+  }
 
   async function detectarPatrones() {
     if (insightsDisponibles.length < 2) return
@@ -216,6 +241,17 @@ function PerfilesPanel({
           )
         })}
       </div>
+
+      {/* Generar más perfiles */}
+      {perfiles.length > 0 && (
+        <button
+          onClick={generarMasPerfiles}
+          disabled={generandoMas}
+          className="w-full text-xs text-gray-500 hover:text-gray-300 border border-dashed border-gray-700 hover:border-gray-500 rounded-xl py-2.5 transition disabled:opacity-40"
+        >
+          {generandoMas ? 'Generando...' : '+ Generar 2 perfiles más'}
+        </button>
+      )}
 
       {/* Patrones detectados */}
       {patrones && (
@@ -728,6 +764,40 @@ export default function ExplorarPage() {
               }}
             />
           ))}
+
+          {/* Panel supuestos a testear */}
+          {supuestos.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-800">
+              <p className="text-xs text-gray-500 uppercase tracking-wider px-1 mb-2">
+                Supuestos a testear
+              </p>
+              <div className="space-y-1.5">
+                {supuestos.map((sup) => (
+                  <div
+                    key={sup.id}
+                    className="bg-gray-900 border border-gray-800 rounded-lg px-2.5 py-2"
+                    title={sup.enunciado}
+                  >
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="text-xs opacity-60">
+                        {sup.tipo === 'deseabilidad' ? '👥' :
+                         sup.tipo === 'factibilidad' ? '⚙️' :
+                         sup.tipo === 'viabilidad' ? '💰' : '🌍'}
+                      </span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full border ${
+                        sup.nivel_riesgo === 'alto' ? 'bg-red-900/40 border-red-800 text-red-400' :
+                        sup.nivel_riesgo === 'medio' ? 'bg-yellow-900/40 border-yellow-800 text-yellow-400' :
+                        'bg-gray-800 border-gray-700 text-gray-500'
+                      }`}>
+                        {sup.nivel_riesgo}
+                      </span>
+                    </div>
+                    <p className="text-gray-400 text-xs leading-snug line-clamp-2">{sup.enunciado}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Panel central — Perfiles */}

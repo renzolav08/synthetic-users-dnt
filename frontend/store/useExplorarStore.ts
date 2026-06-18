@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 
 export type Stakeholder = {
   id: string
@@ -63,6 +64,15 @@ export type Patrones = {
   segmentos_identificados: { nombre: string; descripcion: string; job_especifico: string }[]
 }
 
+export type SupuestoEvaluadoSintesis = {
+  supuesto_id: string
+  enunciado: string
+  tipo: string
+  veredicto: 'validado' | 'parcial' | 'refutado' | 'sin_datos'
+  evidencia: string[]
+  nivel_confianza: number
+}
+
 export type SintesisExploracion = {
   resumen_problema: string
   jobs_principales: { stakeholder: string; job_funcional: string; job_emocional: string; job_social: string }[]
@@ -75,6 +85,7 @@ export type SintesisExploracion = {
   recomendacion_siguiente_paso: string
   total_perfiles_entrevistados: number
   total_stakeholders: number
+  supuestos_evaluados?: SupuestoEvaluadoSintesis[]
 }
 
 // clave: `${stakeholder_id}::${perfilIdx}`
@@ -123,6 +134,7 @@ interface ExplorarStore {
   setStakeholders: (list: Stakeholder[]) => void
   setCargandoStakeholders: (v: boolean) => void
   setPerfilesPor: (sid: string, perfiles: PerfilSintetico[]) => void
+  appendPerfilesPor: (sid: string, perfiles: PerfilSintetico[]) => void
   setCargandoPerfilesPor: (sid: string, v: boolean) => void
   addMensaje: (key: ConversacionKey, msg: Mensaje) => void
   setInsights: (key: ConversacionKey, insights: InsightsJTBD) => void
@@ -155,7 +167,9 @@ const inicial = {
   errorSintesis: null,
 }
 
-export const useExplorarStore = create<ExplorarStore>((set) => ({
+export const useExplorarStore = create<ExplorarStore>()(
+  persist(
+    (set) => ({
   ...inicial,
 
   setIdea: (idea, sector, pais) => set({ idea, sector, pais }),
@@ -164,6 +178,8 @@ export const useExplorarStore = create<ExplorarStore>((set) => ({
 
   setPerfilesPor: (sid, perfiles) =>
     set((s) => ({ perfilesPor: { ...s.perfilesPor, [sid]: perfiles } })),
+  appendPerfilesPor: (sid, perfiles) =>
+    set((s) => ({ perfilesPor: { ...s.perfilesPor, [sid]: [...(s.perfilesPor[sid] ?? []), ...perfiles] } })),
   setCargandoPerfilesPor: (sid, v) =>
     set((s) => ({ cargandoPerfilesPor: { ...s.cargandoPerfilesPor, [sid]: v } })),
 
@@ -191,4 +207,21 @@ export const useExplorarStore = create<ExplorarStore>((set) => ({
   setErrorSintesis: (msg) => set({ errorSintesis: msg }),
 
   reset: () => set(inicial),
-}))
+    }),
+    {
+      name: 'explorar-session',
+      storage: createJSONStorage(() => sessionStorage),
+      partialize: (s) => ({
+        idea: s.idea,
+        sector: s.sector,
+        pais: s.pais,
+        stakeholders: s.stakeholders,
+        perfilesPor: s.perfilesPor,
+        historialPor: s.historialPor,
+        insightsPor: s.insightsPor,
+        patronesPor: s.patronesPor,
+        sintesis: s.sintesis,
+      }),
+    }
+  )
+)

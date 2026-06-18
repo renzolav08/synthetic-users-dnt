@@ -84,28 +84,29 @@ export default function SupuestosPage() {
   const { idea } = useExplorarStore()
   const { supuestos, razonamiento, cargando, error, setSupuestos, setCargando, setError } = useSupuestosStore()
 
+  async function cargar() {
+    if (!idea) return
+    setCargando(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API}/supuestos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idea_texto: idea }),
+      })
+      if (!res.ok) throw new Error(`Error del servidor: ${res.status}`)
+      const data = await res.json()
+      setSupuestos(data.supuestos, data.razonamiento)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error al detectar supuestos')
+    } finally {
+      setCargando(false)
+    }
+  }
+
   useEffect(() => {
     if (!idea) { router.replace('/'); return }
     if (supuestos.length > 0 || cargando) return
-
-    async function cargar() {
-      setCargando(true)
-      setError(null)
-      try {
-        const res = await fetch(`${API}/supuestos`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idea_texto: idea }),
-        })
-        if (!res.ok) throw new Error(`Error del servidor: ${res.status}`)
-        const data = await res.json()
-        setSupuestos(data.supuestos, data.razonamiento)
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : 'Error al detectar supuestos')
-      } finally {
-        setCargando(false)
-      }
-    }
     cargar()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idea])
@@ -178,7 +179,7 @@ export default function SupuestosPage() {
           <div className="bg-red-950/50 border border-red-800 rounded-xl p-5 text-center">
             <p className="text-red-400 text-sm mb-3">⚠ {error}</p>
             <button
-              onClick={() => { setError(null); router.replace('/supuestos') }}
+              onClick={cargar}
               className="text-red-300 hover:text-white text-xs border border-red-800 px-4 py-1.5 rounded-lg transition"
             >
               Reintentar

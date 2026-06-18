@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 
 export type TipoSupuesto = 'deseabilidad' | 'factibilidad' | 'viabilidad' | 'adaptabilidad'
 export type RiesgoSupuesto = 'alto' | 'medio' | 'bajo'
@@ -35,14 +36,23 @@ interface SupuestosStore {
   reset: () => void
 }
 
-export const useSupuestosStore = create<SupuestosStore>((set) => ({
-  supuestos: [],
-  razonamiento: '',
-  cargando: false,
-  error: null,
+export const useSupuestosStore = create<SupuestosStore>()(
+  persist(
+    (set) => ({
+      supuestos: [],
+      razonamiento: '',
+      cargando: false,
+      error: null,
 
-  setSupuestos: (supuestos, razonamiento) => set({ supuestos, razonamiento }),
-  setCargando: (v) => set({ cargando: v }),
-  setError: (msg) => set({ error: msg }),
-  reset: () => set({ supuestos: [], razonamiento: '', cargando: false, error: null }),
-}))
+      setSupuestos: (supuestos, razonamiento) => set({ supuestos, razonamiento }),
+      setCargando: (v) => set({ cargando: v }),
+      setError: (msg) => set({ error: msg }),
+      reset: () => set({ supuestos: [], razonamiento: '', cargando: false, error: null }),
+    }),
+    {
+      name: 'supuestos-session',
+      storage: createJSONStorage(() => sessionStorage),
+      partialize: (s) => ({ supuestos: s.supuestos, razonamiento: s.razonamiento }),
+    }
+  )
+)
