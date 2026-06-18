@@ -173,20 +173,31 @@ function PerfilesPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h2 className="text-white font-semibold text-base">{stakeholder.nombre}</h2>
           <p className="text-gray-400 text-xs mt-0.5">{perfiles.length} perfiles generados</p>
         </div>
-        {insightsDisponibles.length >= 2 && !patrones && (
-          <button
-            onClick={detectarPatrones}
-            disabled={cargandoPatrones}
-            className="text-xs bg-purple-800 hover:bg-purple-700 disabled:opacity-50 text-purple-200 px-3 py-1.5 rounded-lg transition"
-          >
-            {cargandoPatrones ? 'Analizando...' : 'Detectar patrones'}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {perfiles.length > 0 && (
+            <button
+              onClick={generarMasPerfiles}
+              disabled={generandoMas}
+              className="text-xs text-gray-400 hover:text-white border border-dashed border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition disabled:opacity-40"
+            >
+              {generandoMas ? '...' : '+ Más perfiles'}
+            </button>
+          )}
+          {insightsDisponibles.length >= 2 && !patrones && (
+            <button
+              onClick={detectarPatrones}
+              disabled={cargandoPatrones}
+              className="text-xs bg-purple-800 hover:bg-purple-700 disabled:opacity-50 text-purple-200 px-3 py-1.5 rounded-lg transition"
+            >
+              {cargandoPatrones ? 'Analizando...' : 'Detectar patrones'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Preguntas sugeridas */}
@@ -241,17 +252,6 @@ function PerfilesPanel({
           )
         })}
       </div>
-
-      {/* Generar más perfiles */}
-      {perfiles.length > 0 && (
-        <button
-          onClick={generarMasPerfiles}
-          disabled={generandoMas}
-          className="w-full text-xs text-gray-500 hover:text-gray-300 border border-dashed border-gray-700 hover:border-gray-500 rounded-xl py-2.5 transition disabled:opacity-40"
-        >
-          {generandoMas ? 'Generando...' : '+ Generar 2 perfiles más'}
-        </button>
-      )}
 
       {/* Patrones detectados */}
       {patrones && (
