@@ -359,8 +359,15 @@ function PerfilesPanel({
         <div className="flex items-center gap-2">
           {perfiles.length > 0 && (
             <button onClick={generarMasPerfiles} disabled={generandoMas}
-              className="text-xs text-gray-400 hover:text-white border border-dashed border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition disabled:opacity-40">
-              {generandoMas ? '...' : '+ Más perfiles'}
+              className="flex items-center gap-2 text-xs text-gray-400 hover:text-white border border-dashed border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition disabled:opacity-60">
+              {generandoMas ? (
+                <>
+                  <div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                  Generando 2 perfiles...
+                </>
+              ) : (
+                '+ Más perfiles'
+              )}
             </button>
           )}
           {insightsDisponibles.length >= 2 && !patrones && (
