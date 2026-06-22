@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from app.schemas import IdeaInput, ContextoDetectado, ConversacionInput, PatronesInput, SintesisInput, EncuestaInput
+from app.schemas import IdeaInput, ContextoDetectado, ConversacionInput, PatronesInput, SintesisInput, EncuestaInput, ReplicaInput
 from app.services import (
     detectar_contexto,
+    generar_replica_agentes,
     buscar_contexto_web,
     generar_todos_los_perfiles,
     ejecutar_debate,
@@ -102,7 +103,7 @@ async def evaluar_stream(idea: IdeaInput):
         yield f"data: {json.dumps({'tipo': 'session_id', 'session_id': session_id})}\n\n"
 
         # Nodo 1
-        contexto = await detectar_contexto(idea.idea_texto)
+        contexto = await detectar_contexto(idea.idea_texto, pais_sugerido=idea.pais)
         yield f"data: {json.dumps({'tipo': 'contexto', 'data': contexto.model_dump()})}\n\n"
 
         # Nodo 2
@@ -405,3 +406,44 @@ async def endpoint_tokens(session_id: str):
     tokens = get_session_tokens(session_id)
     costo = (tokens["tokens_in"] * 0.0025 + tokens["tokens_out"] * 0.010) / 1000
     return {**tokens, "costo_estimado_usd": round(costo, 6)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Debate interactivo — réplica del usuario
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/debate/replica")
+async def endpoint_replica(body: ReplicaInput):
+    """
+    SSE stream: el usuario envía una réplica durante el debate.
+    Cada agente responde en tiempo real a lo que dijo el usuario.
+    """
+    async def generar():
+        contexto = ContextoDetectado(**body.contexto)
+        tareas = [
+            _respuesta_individual(perfil, body)
+            for perfil in body.perfiles
+        ]
+        for coro in asyncio.as_completed(tareas):
+            respuesta = await coro
+            yield f"data: {json.dumps({'tipo': 'replica_agente', 'data': respuesta})}\n\n"
+        yield f"data: {json.dumps({'tipo': 'fin_replica'})}\n\n"
+
+    async def _respuesta_individual(perfil: dict, b: ReplicaInput):
+        from app.schemas import ContextoDetectado as CD
+        ctx = CD(**b.contexto)
+        resultados = await generar_replica_agentes(
+            perfiles=[perfil],
+            idea_texto=b.idea_texto,
+            contexto=ctx,
+            replica_usuario=b.replica_usuario,
+            argumentos_previos=b.argumentos_previos,
+            session_id=b.session_id,
+        )
+        return resultados[0] if resultados else {}
+
+    return StreamingResponse(
+        generar(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

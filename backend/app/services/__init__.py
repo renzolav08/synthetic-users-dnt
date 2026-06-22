@@ -58,17 +58,26 @@ tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 
 # ── Nodo 1: Detección de contexto ────────────────────────────────────────────
-async def detectar_contexto(idea_texto: str) -> ContextoDetectado:
+async def detectar_contexto(idea_texto: str, pais_sugerido: str | None = None) -> ContextoDetectado:
+    pais_instruccion = (
+        f'IMPORTANTE: El emprendedor opera en {pais_sugerido}. Usa "{pais_sugerido}" como país, '
+        f'genera perfiles y contexto cultural específico para ese país.'
+        if pais_sugerido else
+        'Infiere el país a partir de la idea o usa el mercado latinoamericano más relevante.'
+    )
+
     prompt = f"""Eres un analizador experto de ideas de negocio.
 Analiza la siguiente idea y extrae el contexto estructurado.
 
 IDEA DEL EMPRENDEDOR:
 {idea_texto}
 
+{pais_instruccion}
+
 Responde ÚNICAMENTE con un JSON válido con esta estructura exacta:
 {{
   "sector": "sector principal del negocio",
-  "pais": "país detectado o inferido",
+  "pais": "{'país confirmado: ' + pais_sugerido if pais_sugerido else 'país detectado o inferido'}",
   "region": "ciudad o región si se menciona, null si no",
   "idioma": "español",
   "usuarios_objetivo": "descripción del segmento de usuarios principales",
@@ -491,6 +500,77 @@ async def ejecutar_debate(
     tareas = [_con_timeout(p) for p in perfiles]
     argumentos = await asyncio.gather(*tareas)
     return list(argumentos)
+
+# ── Réplica interactiva del usuario en el debate ─────────────────────────────
+async def generar_replica_agentes(
+    perfiles: list,
+    idea_texto: str,
+    contexto: ContextoDetectado,
+    replica_usuario: str,
+    argumentos_previos: list,
+    session_id: str | None = None,
+) -> list:
+    """
+    El usuario interrumpe el debate con una réplica o nueva perspectiva.
+    Cada agente responde específicamente a lo que dijo el usuario,
+    teniendo en cuenta sus argumentos previos y los de los demás.
+    """
+    resumen_previo = "\n".join(
+        f"- {a['agente_rol']}: {a['argumento'][:120]}..." for a in argumentos_previos
+    )
+
+    async def _respuesta_agente(perfil: dict) -> dict:
+        arg_propio = next(
+            (a["argumento"] for a in argumentos_previos if a["agente_rol"] == perfil["rol"]),
+            "Sin argumento previo"
+        )
+        prompt = f"""Eres {perfil['nombre']}, {perfil['rol']} en un debate sobre esta idea de negocio:
+"{idea_texto}"
+
+Tu argumento anterior fue:
+"{arg_propio}"
+
+El emprendedor ha respondido con esta réplica:
+"{replica_usuario}"
+
+Resumen de los argumentos del resto del panel:
+{resumen_previo}
+
+Responde a la réplica del emprendedor desde tu rol. Puedes:
+- Ceder si su punto es válido
+- Mantener tu posición con nueva evidencia
+- Señalar algo que no consideró
+
+Sé directo, máximo 3-4 oraciones. Habla en primera persona como {perfil['rol']}."""
+
+        try:
+            r = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=250,
+                    temperature=0.8,
+                ),
+                timeout=25.0
+            )
+            respuesta = r.choices[0].message.content
+        except asyncio.TimeoutError:
+            respuesta = f"[{perfil['rol']} no pudo responder a tiempo]"
+
+        return {
+            "agente_rol": perfil["rol"],
+            "agente_nombre": perfil.get("nombre", ""),
+            "agente_categoria": perfil.get("categoria", "E"),
+            "agente_peso": perfil.get("peso", 0.2),
+            "argumento": respuesta,
+            "posicion": "neutral",
+            "es_replica": True,
+        }
+
+    tareas = [_respuesta_agente(p) for p in perfiles]
+    respuestas = await asyncio.gather(*tareas)
+    return list(respuestas)
+
 
 # ── Nodo 5: Consenso ponderado y árbol de argumentos ─────────────────────────
 async def generar_consenso(
@@ -1087,7 +1167,7 @@ Responde ÚNICAMENTE con un JSON con esta estructura:
   ],
   "validacion_problema": "validado|parcial|no_validado",
   "nivel_confianza": 0.0,
-  "recomendacion_siguiente_paso": "qué debería hacer el emprendedor ahora con estos hallazgos",
+  "recomendacion_siguiente_paso": "acción concreta y específica para las próximas 2 semanas: qué experimento hacer, con quién, qué métrica medir y qué resultado validaría o refutaría el supuesto más crítico. Máximo 2 oraciones. NO genérico.",
   "total_perfiles_entrevistados": {total_perfiles},
   "total_stakeholders": {len(datos.conversaciones)}
 }}

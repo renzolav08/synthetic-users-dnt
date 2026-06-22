@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useDebateStore } from '@/store/useDebateStore'
+import { useExplorarStore } from '@/store/useExplorarStore'
 
 const COLORES_ROL: Record<string, string> = {
   'Usuario Objetivo':    'border-purple-500 bg-purple-950/30',
@@ -144,12 +145,18 @@ export default function DebatePage() {
     idea, estado, contexto, argumentos, arbol, reset, insights_exploracion,
     sessionId, setEstado, setContexto, addArgumento, setArbol, setError, setSessionId,
   } = useDebateStore()
+  const { pais: paisExploracion } = useExplorarStore()
 
   // HU-003: panel de contexto colapsable
   const [mostrarContexto, setMostrarContexto] = useState(false)
   // HU-009: modal de encuesta
   const [mostrarEncuesta, setMostrarEncuesta] = useState(false)
   const [encuestaMostrada, setEncuestaMostrada] = useState(false)
+  // Debate interactivo
+  const [perfilesDebate, setPerfilesDebate] = useState<Record<string, unknown>[]>([])
+  const [rondas, setRondas] = useState<{ replica: string; respuestas: typeof argumentos }[]>([])
+  const [textoReplica, setTextoReplica] = useState('')
+  const [enviandoReplica, setEnviandoReplica] = useState(false)
 
   useEffect(() => {
     if (!idea) { router.replace('/'); return }
@@ -175,6 +182,7 @@ export default function DebatePage() {
         body: JSON.stringify({
           idea_texto: idea,
           insights_exploracion: insights_exploracion ?? undefined,
+          pais: paisExploracion || undefined,
         }),
       })
       if (!res.ok) throw new Error(`Error del servidor: ${res.status}`)
@@ -198,9 +206,16 @@ export default function DebatePage() {
             if (tipo === 'session_id')     { setSessionId(parsed.session_id) }
             else if (tipo === 'contexto')  { setContexto(data); setEstado('buscando_web') }
             else if (tipo === 'datos_web') { setEstado('generando_perfiles') }
-            else if (tipo === 'perfiles_listos') { setEstado('debatiendo') }
+            else if (tipo === 'perfiles_listos') {
+              setEstado('debatiendo')
+              if (parsed.perfiles) setPerfilesDebate(parsed.perfiles)
+            }
             else if (tipo === 'argumento') { addArgumento(data) }
-            else if (tipo === 'consenso')  { setArbol(data); setEstado('consenso') }
+            else if (tipo === 'consenso')  {
+              // Guardamos el árbol pero no lo mostramos aún — el usuario puede replicar primero
+              setArbol(data)
+              setEstado('consenso')
+            }
             else if (tipo === 'fin')       { setEstado('completado') }
           } catch {}
         }
@@ -208,6 +223,63 @@ export default function DebatePage() {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Error inesperado'
       setError(msg)
+    }
+  }
+
+  async function enviarReplica() {
+    const texto = textoReplica.trim()
+    if (!texto || enviandoReplica || !contexto) return
+    setEnviandoReplica(true)
+    setTextoReplica('')
+
+    const nuevaRonda: { replica: string; respuestas: typeof argumentos } = {
+      replica: texto,
+      respuestas: [],
+    }
+    setRondas(prev => [...prev, nuevaRonda])
+    const rondaIdx = rondas.length
+
+    try {
+      const res = await fetch(`${API}/debate/replica`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idea_texto: idea,
+          replica_usuario: texto,
+          perfiles: perfilesDebate.length > 0 ? perfilesDebate : contexto.agentes,
+          contexto: contexto,
+          argumentos_previos: argumentos,
+          session_id: sessionId,
+        }),
+      })
+      if (!res.body) return
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const parsed = JSON.parse(line.slice(6))
+            if (parsed.tipo === 'replica_agente') {
+              setRondas(prev =>
+                prev.map((r, i) =>
+                  i === rondaIdx
+                    ? { ...r, respuestas: [...r.respuestas, parsed.data] }
+                    : r
+                )
+              )
+            }
+          } catch {}
+        }
+      }
+    } finally {
+      setEnviandoReplica(false)
     }
   }
 
@@ -441,6 +513,78 @@ export default function DebatePage() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ── Debate interactivo: rondas de réplica ───────────────────────── */}
+        {rondas.map((ronda, ri) => (
+          <div key={ri} className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-gray-800" />
+              <span className="text-xs text-gray-500 flex-shrink-0">Ronda {ri + 2}</span>
+              <div className="flex-1 h-px bg-gray-800" />
+            </div>
+            {/* Réplica del usuario */}
+            <div className="flex justify-end">
+              <div className="max-w-[75%] bg-blue-600 rounded-2xl rounded-br-sm px-4 py-3">
+                <p className="text-xs text-blue-200 mb-1 font-medium">Tú</p>
+                <p className="text-white text-sm leading-relaxed">{ronda.replica}</p>
+              </div>
+            </div>
+            {/* Respuestas de agentes */}
+            {ronda.respuestas.map((resp, i) => (
+              <div key={i} className={`border-l-2 rounded-xl p-4 ${COLORES_ROL[resp.agente_rol] || 'border-gray-600 bg-gray-900'}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-white text-sm font-semibold">{resp.agente_rol}</span>
+                  <span className="text-xs text-gray-500">peso {((resp.agente_peso ?? 0) * 100).toFixed(0)}%</span>
+                </div>
+                <p className="text-gray-300 text-sm leading-relaxed">{resp.argumento}</p>
+              </div>
+            ))}
+            {/* Spinner mientras carga esta ronda */}
+            {enviandoReplica && ri === rondas.length - 1 && ronda.respuestas.length < (contexto?.agentes.length ?? 5) && (
+              <div className="border-l-2 border-gray-700 bg-gray-900 rounded-xl p-4 animate-pulse">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-gray-500 text-sm">Los agentes analizan tu réplica...</span>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* Input de réplica — aparece cuando el debate inicial terminó */}
+        {estado === 'completado' && (
+          <div className="bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-3">
+            <p className="text-sm text-gray-300 font-medium">¿Tienes alguna réplica o nueva perspectiva?</p>
+            <p className="text-xs text-gray-500">Los agentes responderán en tiempo real a tu punto de vista.</p>
+            <div className="flex gap-2">
+              <textarea
+                value={textoReplica}
+                onChange={e => setTextoReplica(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarReplica() } }}
+                disabled={enviandoReplica}
+                placeholder="Ej: ¿Qué pasa si el primer mes es gratuito para los repartidores? ¿Cambia la viabilidad?"
+                rows={3}
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-white placeholder-gray-500 text-sm resize-none focus:outline-none focus:border-blue-600 transition disabled:opacity-50"
+              />
+              <button
+                onClick={enviarReplica}
+                disabled={!textoReplica.trim() || enviandoReplica}
+                className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 rounded-xl transition text-sm font-medium self-end py-2.5"
+              >
+                {enviandoReplica ? '...' : '→'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Separador visual hacia el consenso */}
+        {estado === 'completado' && arbol && rondas.length > 0 && (
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-gray-800" />
+            <span className="text-xs text-gray-500">Consenso final</span>
+            <div className="flex-1 h-px bg-gray-800" />
           </div>
         )}
 

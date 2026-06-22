@@ -6,8 +6,14 @@ import { useExplorarStore } from '@/store/useExplorarStore'
 import { useSupuestosStore } from '@/store/useSupuestosStore'
 import { useRouter } from 'next/navigation'
 
+const PAISES = [
+  'Perú', 'México', 'Colombia', 'Argentina', 'Chile', 'Ecuador',
+  'Bolivia', 'Venezuela', 'Uruguay', 'Paraguay', 'España',
+]
+
 export default function Home() {
   const [texto, setTexto] = useState('')
+  const [pais, setPais] = useState('Perú')
   const { estado } = useDebateStore()
   const explorarStore = useExplorarStore()
   const supuestosStore = useSupuestosStore()
@@ -18,7 +24,7 @@ export default function Home() {
     if (!texto.trim() || texto.trim().length < 20) return
     explorarStore.reset()
     supuestosStore.reset()
-    explorarStore.setIdea(texto, '', '')
+    explorarStore.setIdea(texto, '', pais)
     router.push('/explorar')
   }
 
@@ -55,6 +61,20 @@ export default function Home() {
           rows={6}
           className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 resize-none focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition disabled:opacity-50 text-sm leading-relaxed"
         />
+
+        {/* Selector de país */}
+        <div className="flex items-center gap-2 mt-3 mb-1">
+          <label className="text-xs text-gray-500 flex-shrink-0">País de operación</label>
+          <select
+            value={pais}
+            onChange={e => setPais(e.target.value)}
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-600 transition"
+          >
+            {PAISES.map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
 
         {/* Contador de palabras */}
         <div className="flex justify-between items-center mt-2 mb-5">

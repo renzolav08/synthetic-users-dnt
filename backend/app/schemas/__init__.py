@@ -16,7 +16,17 @@ class IdeaInput(BaseModel):
     idea_texto: str
     team_id: Optional[str] = None
     insights_exploracion: Optional[dict] = None
-    supuestos_evaluados: Optional[list] = None   # veredictos por supuesto para enriquecer el debate
+    supuestos_evaluados: Optional[list] = None
+    pais: Optional[str] = None  # país explícito del emprendedor
+
+
+class ReplicaInput(BaseModel):
+    idea_texto: str
+    replica_usuario: str
+    perfiles: list
+    contexto: dict
+    argumentos_previos: list
+    session_id: Optional[str] = None
 
 # ── Contexto detectado por el Nodo 1 ─────────────────────────────────────────
 class AgenteConfig(BaseModel):
