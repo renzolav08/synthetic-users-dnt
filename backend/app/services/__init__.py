@@ -7,8 +7,49 @@ from app.schemas import (
 )
 from dotenv import load_dotenv
 import asyncio
+import hashlib
 import os
 import json
+import time
+
+# ── TA-003: Caché de perfiles en memoria ────────────────────────────────────
+_perfil_cache: dict[str, tuple[dict, float]] = {}  # key → (perfil, timestamp)
+_CACHE_TTL = 86400  # 24 horas
+
+def _cache_get(key: str) -> dict | None:
+    entry = _perfil_cache.get(key)
+    if entry and (time.time() - entry[1]) < _CACHE_TTL:
+        return entry[0]
+    return None
+
+def _cache_set(key: str, perfil: dict):
+    _perfil_cache[key] = (perfil, time.time())
+
+def _perfil_cache_key(sector: str, pais: str, rol: str) -> str:
+    raw = f"{sector}|{pais}|{rol}".lower()
+    return hashlib.md5(raw.encode()).hexdigest()
+
+# ── TA-002: Conteo de tokens por sesión ─────────────────────────────────────
+_token_log: dict[str, dict] = {}
+
+def _log_tokens(session_id: str | None, response, call_type: str):
+    if not session_id:
+        return
+    if session_id not in _token_log:
+        _token_log[session_id] = {"tokens_in": 0, "tokens_out": 0, "calls": []}
+    u = response.usage
+    if not u:
+        return
+    _token_log[session_id]["tokens_in"] += u.prompt_tokens
+    _token_log[session_id]["tokens_out"] += u.completion_tokens
+    _token_log[session_id]["calls"].append({
+        "type": call_type,
+        "in": u.prompt_tokens,
+        "out": u.completion_tokens,
+    })
+
+def get_session_tokens(session_id: str) -> dict:
+    return _token_log.get(session_id, {"tokens_in": 0, "tokens_out": 0, "calls": []})
 
 load_dotenv()
 
@@ -149,7 +190,8 @@ Responde UNICAMENTE con un JSON:
 async def generar_perfil_agente(
     agente: dict,
     contexto: ContextoDetectado,
-    datos_web: dict
+    datos_web: dict,
+    session_id: str | None = None,
 ) -> dict:
     """
     Genera el perfil JSON completo de un agente siguiendo el protocolo
@@ -229,6 +271,16 @@ IMPORTANTE: El perfil debe ser específico para {contexto.pais} y el sector {con
 Fundamenta las creencias y comportamientos en los datos reales del mercado provistos.
 NO incluyas texto fuera del JSON."""
 
+    # TA-003: revisar caché
+    cache_key = _perfil_cache_key(contexto.sector, contexto.pais, agente["rol"])
+    cached = _cache_get(cache_key)
+    if cached:
+        # ajustar peso y tipo al agente actual, no al cacheado
+        cached = dict(cached)
+        cached["peso"] = agente["peso"]
+        cached["tipo"] = agente["tipo"]
+        return cached
+
     response = await client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
@@ -236,31 +288,31 @@ NO incluyas texto fuera del JSON."""
         max_tokens=1000,
         temperature=0.8
     )
+    _log_tokens(session_id, response, "generar_perfil")
 
     perfil = json.loads(response.choices[0].message.content)
     perfil["rol"] = agente["rol"]
     perfil["categoria"] = agente["categoria"]
     perfil["peso"] = agente["peso"]
     perfil["tipo"] = agente["tipo"]
+    _cache_set(cache_key, perfil)
     return perfil
 
 
 async def generar_todos_los_perfiles(
     contexto: ContextoDetectado,
-    datos_web: dict
+    datos_web: dict,
+    session_id: str | None = None,
 ) -> list[dict]:
-    """
-    Genera los perfiles de todos los agentes en paralelo usando asyncio.gather().
-    """
     tareas = [
         generar_perfil_agente(
             agente=agente.model_dump(),
             contexto=contexto,
-            datos_web=datos_web
+            datos_web=datos_web,
+            session_id=session_id,
         )
         for agente in contexto.agentes
     ]
-
     perfiles = await asyncio.gather(*tareas)
     return list(perfiles)
 
@@ -270,6 +322,7 @@ async def generar_argumento_agente(
     idea_texto: str,
     contexto: ContextoDetectado,
     insights_exploracion: dict | None = None,
+    session_id: str | None = None,
 ) -> dict:
     """
     Genera el argumento adversarial de UN agente sobre la idea.
@@ -380,12 +433,15 @@ async def generar_argumento_agente(
         f"Responde solo con: pro, contra, o neutral"
     )
 
+    _log_tokens(session_id, response, f"argumento_{perfil['rol']}")
+
     clasif = await client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt_clasif}],
         max_tokens=5,
         temperature=0
     )
+    _log_tokens(session_id, clasif, "clasificar_posicion")
 
     posicion = clasif.choices[0].message.content.strip().lower()
     if posicion not in ["pro", "contra", "neutral"]:
@@ -407,15 +463,32 @@ async def ejecutar_debate(
     idea_texto: str,
     contexto: ContextoDetectado,
     insights_exploracion: dict | None = None,
+    session_id: str | None = None,
 ) -> list:
     """
     Ejecuta el debate completo: todos los agentes argumentan en paralelo.
+    HU-004: cada agente tiene timeout de 30s; si expira devuelve placeholder.
     Si se proveen insights de exploración, cada agente los usa como evidencia.
     """
-    tareas = [
-        generar_argumento_agente(perfil, idea_texto, contexto, insights_exploracion)
-        for perfil in perfiles
-    ]
+    async def _con_timeout(perfil):
+        try:
+            return await asyncio.wait_for(
+                generar_argumento_agente(perfil, idea_texto, contexto, insights_exploracion, session_id),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            return {
+                "agente_rol": perfil["rol"],
+                "agente_nombre": perfil.get("nombre", ""),
+                "agente_categoria": perfil.get("categoria", "E"),
+                "agente_peso": perfil.get("peso", 0.2),
+                "argumento": f"[{perfil['rol']} no respondió a tiempo. El debate continúa con los demás agentes.]",
+                "posicion": "neutral",
+                "fuente_insight": None,
+                "timeout": True,
+            }
+
+    tareas = [_con_timeout(p) for p in perfiles]
     argumentos = await asyncio.gather(*tareas)
     return list(argumentos)
 
@@ -423,7 +496,8 @@ async def ejecutar_debate(
 async def generar_consenso(
     argumentos: list,
     idea_texto: str,
-    contexto: ContextoDetectado
+    contexto: ContextoDetectado,
+    session_id: str | None = None,
 ) -> dict:
     """
     Analiza todos los argumentos del debate, aplica los pesos
@@ -478,6 +552,7 @@ async def generar_consenso(
         max_tokens=1000,
         temperature=0.3
     )
+    _log_tokens(session_id, response, "consenso")
 
     return json.loads(response.choices[0].message.content)
 

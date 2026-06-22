@@ -1,6 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from app.schemas import IdeaInput, ContextoDetectado, ConversacionInput, PatronesInput, SintesisInput
+from app.schemas import IdeaInput, ContextoDetectado, ConversacionInput, PatronesInput, SintesisInput, EncuestaInput
 from app.services import (
     detectar_contexto,
     buscar_contexto_web,
@@ -13,9 +13,12 @@ from app.services import (
     detectar_patrones,
     sintetizar_exploracion,
     detectar_supuestos,
+    get_session_tokens,
 )
+from app.db import save_debate, get_debates, get_debate, save_encuesta
 import json
 import asyncio
+import uuid
 
 router = APIRouter()
 
@@ -92,9 +95,12 @@ async def evaluar_idea(idea: IdeaInput):
 async def evaluar_stream(idea: IdeaInput):
     """
     Pipeline completo con streaming SSE.
-    Si se provee insights_exploracion, los agentes del debate los usan como evidencia.
+    Genera session_id, propaga tokens, guarda en DB al finalizar.
     """
     async def generar():
+        session_id = str(uuid.uuid4())
+        yield f"data: {json.dumps({'tipo': 'session_id', 'session_id': session_id})}\n\n"
+
         # Nodo 1
         contexto = await detectar_contexto(idea.idea_texto)
         yield f"data: {json.dumps({'tipo': 'contexto', 'data': contexto.model_dump()})}\n\n"
@@ -104,12 +110,12 @@ async def evaluar_stream(idea: IdeaInput):
         yield f"data: {json.dumps({'tipo': 'datos_web', 'data': datos_web})}\n\n"
 
         # Nodo 3
-        perfiles = await generar_todos_los_perfiles(contexto, datos_web)
+        perfiles = await generar_todos_los_perfiles(contexto, datos_web, session_id)
         yield f"data: {json.dumps({'tipo': 'perfiles_listos', 'total': len(perfiles)})}\n\n"
 
-        # Nodo 4 — cada agente en cuanto termina, con insights opcionales
+        # Nodo 4 — cada agente en cuanto termina (con timeout HU-004)
         tareas = [
-            ejecutar_debate([p], idea.idea_texto, contexto, idea.insights_exploracion)
+            ejecutar_debate([p], idea.idea_texto, contexto, idea.insights_exploracion, session_id)
             for p in perfiles
         ]
 
@@ -121,8 +127,24 @@ async def evaluar_stream(idea: IdeaInput):
             yield f"data: {json.dumps({'tipo': 'argumento', 'data': arg})}\n\n"
 
         # Nodo 5
-        consenso = await generar_consenso(argumentos, idea.idea_texto, contexto)
+        consenso = await generar_consenso(argumentos, idea.idea_texto, contexto, session_id)
         yield f"data: {json.dumps({'tipo': 'consenso', 'data': consenso})}\n\n"
+
+        # TA-001/TA-002: guardar sesión en DB con tokens
+        try:
+            tokens = get_session_tokens(session_id)
+            await save_debate(
+                session_id=session_id,
+                idea_texto=idea.idea_texto,
+                contexto=contexto.model_dump(),
+                argumentos=argumentos,
+                arbol=consenso,
+                tokens_in=tokens["tokens_in"],
+                tokens_out=tokens["tokens_out"],
+            )
+        except Exception:
+            pass  # no bloquear el stream si falla el guardado
+
         yield f"data: {json.dumps({'tipo': 'fin'})}\n\n"
 
     return StreamingResponse(
@@ -333,3 +355,52 @@ async def endpoint_sintetizar_exploracion(body: SintesisInput):
     """
     sintesis = await sintetizar_exploracion(body)
     return sintesis
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HU-006 / TA-001 — Historial de debates
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/historial")
+async def endpoint_historial(limit: int = 50):
+    """Lista los debates guardados, más reciente primero."""
+    debates = await get_debates(limit)
+    return {"debates": debates, "total": len(debates)}
+
+
+@router.get("/historial/{session_id}")
+async def endpoint_debate_detalle(session_id: str):
+    """Devuelve el debate completo: argumentos, árbol, tokens."""
+    debate = await get_debate(session_id)
+    if not debate:
+        raise HTTPException(status_code=404, detail="Debate no encontrado")
+    return debate
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HU-009 — Encuesta de satisfacción post-debate
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/encuesta")
+async def endpoint_encuesta(body: EncuestaInput):
+    """Guarda la encuesta de satisfacción (5 dimensiones Likert 1-5)."""
+    enc_id = await save_encuesta(
+        session_id=body.session_id,
+        utilidad=body.utilidad,
+        calidad_argumentos=body.calidad_argumentos,
+        relevancia_contexto=body.relevancia_contexto,
+        intencion_reuso=body.intencion_reuso,
+        confianza_recomendacion=body.confianza_recomendacion,
+        comentario=body.comentario or "",
+    )
+    return {"ok": True, "encuesta_id": enc_id}
+
+
+# ── TA-002: consulta de tokens por sesión ────────────────────────────────────
+@router.get("/admin/tokens/{session_id}")
+async def endpoint_tokens(session_id: str):
+    """Devuelve el consumo de tokens de una sesión de debate."""
+    from app.services import get_session_tokens
+    tokens = get_session_tokens(session_id)
+    costo = (tokens["tokens_in"] * 0.0025 + tokens["tokens_out"] * 0.010) / 1000
+    return {**tokens, "costo_estimado_usd": round(costo, 6)}

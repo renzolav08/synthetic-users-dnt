@@ -1,11 +1,19 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import os
 from app.api import router
+from app.db import init_db
 load_dotenv()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    yield
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Synthetic Users DNT",
     description="Sistema multiagente de usuarios sintéticos basados en LLMs",
     version="1.0.0"

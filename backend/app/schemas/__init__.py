@@ -1,6 +1,16 @@
 from pydantic import BaseModel
 from typing import Optional, Any
 
+
+class EncuestaInput(BaseModel):
+    session_id: str
+    utilidad: int
+    calidad_argumentos: int
+    relevancia_contexto: int
+    intencion_reuso: int
+    confianza_recomendacion: int
+    comentario: Optional[str] = ""
+
 # ── Entrada del sistema ───────────────────────────────────────────────────────
 class IdeaInput(BaseModel):
     idea_texto: str

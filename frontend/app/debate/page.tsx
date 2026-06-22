@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useDebateStore } from '@/store/useDebateStore'
 
@@ -16,44 +16,155 @@ const COLORES_ROL: Record<string, string> = {
 }
 
 const ICONO_POSICION: Record<string, string> = {
-  pro: '✓',
-  contra: '✗',
-  neutral: '○',
+  pro: '✓', contra: '✗', neutral: '○',
 }
-
 const COLOR_POSICION: Record<string, string> = {
-  pro: 'text-green-400',
-  contra: 'text-red-400',
-  neutral: 'text-gray-400',
+  pro: 'text-green-400', contra: 'text-red-400', neutral: 'text-gray-400',
 }
-
 const COLOR_RECOMENDACION: Record<string, string> = {
   viable: 'bg-green-900 border-green-600 text-green-300',
   no_viable: 'bg-red-900 border-red-600 text-red-300',
   condicionalmente_viable: 'bg-yellow-900 border-yellow-600 text-yellow-300',
 }
-
 const LABEL_RECOMENDACION: Record<string, string> = {
   viable: '✓ Viable',
   no_viable: '✗ No viable',
   condicionalmente_viable: '◐ Condicionalmente viable',
 }
 
+const LIKERT_LABELS: Record<number, string> = {
+  1: 'Muy bajo', 2: 'Bajo', 3: 'Regular', 4: 'Alto', 5: 'Muy alto',
+}
+
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
+
+// ── HU-009: Modal de encuesta ─────────────────────────────────────────────────
+function EncuestaModal({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
+  const [valores, setValores] = useState({ utilidad: 3, calidad_argumentos: 3, relevancia_contexto: 3, intencion_reuso: 3, confianza_recomendacion: 3 })
+  const [comentario, setComentario] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [enviado, setEnviado] = useState(false)
+
+  const preguntas: { key: keyof typeof valores; label: string }[] = [
+    { key: 'utilidad', label: 'Utilidad general del debate para tu decisión' },
+    { key: 'calidad_argumentos', label: 'Calidad y profundidad de los argumentos' },
+    { key: 'relevancia_contexto', label: 'Relevancia del contexto y agentes elegidos' },
+    { key: 'intencion_reuso', label: '¿Volverías a usar este sistema?' },
+    { key: 'confianza_recomendacion', label: 'Confianza en la recomendación final' },
+  ]
+
+  async function enviar() {
+    setEnviando(true)
+    try {
+      await fetch(`${API}/encuesta`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, ...valores, comentario }),
+      })
+      setEnviado(true)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+        {enviado ? (
+          <div className="text-center py-6">
+            <div className="text-4xl mb-3">🙏</div>
+            <p className="text-white font-semibold text-lg mb-1">¡Gracias por tu feedback!</p>
+            <p className="text-gray-400 text-sm mb-5">Tu opinión ayuda a mejorar el sistema.</p>
+            <button onClick={onClose} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl text-sm font-semibold transition">
+              Cerrar
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-white font-semibold text-base">Encuesta de satisfacción</h2>
+              <button onClick={onClose} className="text-gray-500 hover:text-white transition text-lg">✕</button>
+            </div>
+            <div className="space-y-5">
+              {preguntas.map(({ key, label }) => (
+                <div key={key}>
+                  <p className="text-gray-300 text-sm mb-2">{label}</p>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map(n => (
+                      <button
+                        key={n}
+                        onClick={() => setValores(v => ({ ...v, [key]: n }))}
+                        className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${
+                          valores[key] === n
+                            ? 'bg-blue-600 border-blue-500 text-white'
+                            : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500'
+                        }`}
+                        title={LIKERT_LABELS[n]}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1 text-right">{LIKERT_LABELS[valores[key]]}</p>
+                </div>
+              ))}
+              <div>
+                <p className="text-gray-300 text-sm mb-2">Comentario adicional (opcional)</p>
+                <textarea
+                  value={comentario}
+                  onChange={e => setComentario(e.target.value)}
+                  rows={2}
+                  placeholder="¿Algo que mejorarías?"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 resize-none focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-5">
+              <button onClick={onClose} className="text-gray-400 hover:text-white text-sm transition px-4 py-2">
+                Omitir
+              </button>
+              <button
+                onClick={enviar}
+                disabled={enviando}
+                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition"
+              >
+                {enviando ? 'Enviando...' : 'Enviar feedback'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export default function DebatePage() {
   const router = useRouter()
-  const { idea, estado, contexto, argumentos, arbol, reset, insights_exploracion,
-          setEstado, setContexto, addArgumento, setArbol, setError } = useDebateStore()
+  const {
+    idea, estado, contexto, argumentos, arbol, reset, insights_exploracion,
+    sessionId, setEstado, setContexto, addArgumento, setArbol, setError, setSessionId,
+  } = useDebateStore()
 
-  // Si llegamos aquí sin debate iniciado todavía, arrancarlo automáticamente
+  // HU-003: panel de contexto colapsable
+  const [mostrarContexto, setMostrarContexto] = useState(false)
+  // HU-009: modal de encuesta
+  const [mostrarEncuesta, setMostrarEncuesta] = useState(false)
+  const [encuestaMostrada, setEncuestaMostrada] = useState(false)
+
   useEffect(() => {
     if (!idea) { router.replace('/'); return }
-    if (estado !== 'idle') return   // ya está corriendo o terminó
-
+    if (estado !== 'idle') return
     iniciarDebate()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idea])
+
+  // Mostrar encuesta cuando el debate completa
+  useEffect(() => {
+    if (estado === 'completado' && sessionId && !encuestaMostrada) {
+      setEncuestaMostrada(true)
+      setTimeout(() => setMostrarEncuesta(true), 1200)
+    }
+  }, [estado, sessionId, encuestaMostrada])
 
   async function iniciarDebate() {
     setEstado('analizando')
@@ -82,13 +193,15 @@ export default function DebatePage() {
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           try {
-            const { tipo, data } = JSON.parse(line.slice(6))
-            if (tipo === 'contexto')        { setContexto(data); setEstado('buscando_web') }
-            else if (tipo === 'datos_web')  { setEstado('generando_perfiles') }
+            const parsed = JSON.parse(line.slice(6))
+            const { tipo, data } = parsed
+            if (tipo === 'session_id')     { setSessionId(parsed.session_id) }
+            else if (tipo === 'contexto')  { setContexto(data); setEstado('buscando_web') }
+            else if (tipo === 'datos_web') { setEstado('generando_perfiles') }
             else if (tipo === 'perfiles_listos') { setEstado('debatiendo') }
-            else if (tipo === 'argumento')  { addArgumento(data) }
-            else if (tipo === 'consenso')   { setArbol(data); setEstado('consenso') }
-            else if (tipo === 'fin')        { setEstado('completado') }
+            else if (tipo === 'argumento') { addArgumento(data) }
+            else if (tipo === 'consenso')  { setArbol(data); setEstado('consenso') }
+            else if (tipo === 'fin')       { setEstado('completado') }
           } catch {}
         }
       }
@@ -96,6 +209,33 @@ export default function DebatePage() {
       const msg = e instanceof Error ? e.message : 'Error inesperado'
       setError(msg)
     }
+  }
+
+  // HU-007: exportar CSV
+  function exportarCSV() {
+    const rows = [
+      ['Agente', 'Posición', 'Peso (%)', 'Argumento', 'Fuente insight'],
+      ...argumentos.map(a => [
+        a.agente_rol,
+        a.posicion,
+        ((a.agente_peso ?? 0) * 100).toFixed(0),
+        a.argumento.replace(/"/g, '""'),
+        a.fuente_insight ?? '',
+      ]),
+    ]
+    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `debate-${Date.now()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // HU-007: exportar PDF
+  function exportarPDF() {
+    window.print()
   }
 
   useEffect(() => {
@@ -115,20 +255,48 @@ export default function DebatePage() {
   return (
     <main className="min-h-screen bg-gray-950 text-white">
 
+      {/* Modal de encuesta HU-009 */}
+      {mostrarEncuesta && sessionId && (
+        <EncuestaModal sessionId={sessionId} onClose={() => setMostrarEncuesta(false)} />
+      )}
+
       {/* Header */}
-      <div className="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div className="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-10 print:hidden">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <button
             onClick={() => { reset(); router.push('/') }}
             className="text-gray-400 hover:text-white text-sm flex items-center gap-1 transition"
           >
             ← Nueva evaluación
           </button>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap justify-end">
             {insights_exploracion && (
               <span className="text-xs bg-purple-900/60 border border-purple-700 text-purple-300 px-2.5 py-1 rounded-full">
                 ✓ Con insights de exploración
               </span>
+            )}
+            {/* HU-007: botones de exportación */}
+            {estado === 'completado' && (
+              <>
+                <button
+                  onClick={exportarCSV}
+                  className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition"
+                >
+                  ↓ CSV
+                </button>
+                <button
+                  onClick={exportarPDF}
+                  className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition"
+                >
+                  ↓ PDF
+                </button>
+                <button
+                  onClick={() => setMostrarEncuesta(true)}
+                  className="text-xs bg-blue-900/60 hover:bg-blue-800/60 border border-blue-700 text-blue-300 px-3 py-1.5 rounded-lg transition"
+                >
+                  ★ Valorar
+                </button>
+              </>
             )}
             {cargando && (
               <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
@@ -146,22 +314,74 @@ export default function DebatePage() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
           <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Idea evaluada</p>
           <p className="text-gray-200 leading-relaxed">{idea}</p>
+
+          {/* HU-003: Contexto colapsable */}
           {contexto && (
-            <div className="flex flex-wrap gap-2 mt-3">
-              <span className="bg-gray-800 text-gray-300 text-xs px-2.5 py-1 rounded-full">
-                {contexto.sector}
-              </span>
-              <span className="bg-gray-800 text-gray-300 text-xs px-2.5 py-1 rounded-full">
-                {contexto.pais}{contexto.region ? ` · ${contexto.region}` : ''}
-              </span>
-              <span className="bg-gray-800 text-gray-300 text-xs px-2.5 py-1 rounded-full">
-                {contexto.modelo_negocio}
-              </span>
-              {contexto.agentes.map(a => (
-                <span key={a.rol} className="bg-blue-950 text-blue-300 text-xs px-2.5 py-1 rounded-full">
-                  {a.rol}
-                </span>
-              ))}
+            <div className="mt-4">
+              <button
+                onClick={() => setMostrarContexto(v => !v)}
+                className="flex items-center gap-2 text-xs text-gray-400 hover:text-white transition"
+              >
+                <span className={`transition-transform ${mostrarContexto ? 'rotate-90' : ''}`}>▶</span>
+                <span>Contexto detectado — {contexto.sector} · {contexto.pais} · {contexto.modelo_negocio}</span>
+              </button>
+
+              {mostrarContexto && (
+                <div className="mt-4 bg-gray-800/60 rounded-xl p-4 space-y-4">
+                  {/* Datos generales */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      { label: 'Sector', value: contexto.sector },
+                      { label: 'País', value: `${contexto.pais}${contexto.region ? ` · ${contexto.region}` : ''}` },
+                      { label: 'Modelo de negocio', value: contexto.modelo_negocio },
+                      { label: 'Usuarios objetivo', value: contexto.usuarios_objetivo },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="bg-gray-900 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 mb-0.5">{label}</p>
+                        <p className="text-sm text-gray-200 font-medium leading-snug">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Agentes con peso */}
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">Agentes del debate</p>
+                    <div className="space-y-2">
+                      {contexto.agentes.map(a => (
+                        <div key={a.rol} className="flex items-center gap-3">
+                          <div className="flex-1 flex items-center justify-between bg-gray-900 rounded-lg px-3 py-2">
+                            <span className="text-sm text-gray-200">{a.rol}</span>
+                            <span className="text-xs text-gray-500">{a.tipo}</span>
+                          </div>
+                          <div className="w-24 bg-gray-700 rounded-full h-2 overflow-hidden flex-shrink-0">
+                            <div
+                              className="h-2 bg-blue-500 rounded-full"
+                              style={{ width: `${(a.peso * 100).toFixed(0)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-gray-400 w-10 text-right flex-shrink-0">
+                            {(a.peso * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Riesgos detectados */}
+                  {contexto.riesgos_detectados.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-2">Riesgos detectados</p>
+                      <div className="flex flex-wrap gap-2">
+                        {contexto.riesgos_detectados.map((r, i) => (
+                          <span key={i} className="text-xs bg-red-950/40 border border-red-800 text-red-300 px-2.5 py-1 rounded-full">
+                            {r}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -184,19 +404,20 @@ export default function DebatePage() {
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
                       <span className="font-semibold text-white text-sm">{arg.agente_rol}</span>
+                      {arg.agente_nombre && (
+                        <span className="text-gray-500 text-xs ml-2">— {arg.agente_nombre}</span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className={`text-xs font-medium ${COLOR_POSICION[arg.posicion] || 'text-gray-400'}`}>
                         {ICONO_POSICION[arg.posicion] || '○'} {arg.posicion}
                       </span>
                       <span className="text-xs text-gray-600">
-                        peso {(arg.agente_peso * 100).toFixed(0)}%
+                        peso {((arg.agente_peso ?? 0) * 100).toFixed(0)}%
                       </span>
                     </div>
                   </div>
                   <p className="text-gray-300 text-sm leading-relaxed">{arg.argumento}</p>
-
-                  {/* Fuente del insight de exploración */}
                   {arg.fuente_insight && (
                     <div className="mt-3 pt-3 border-t border-white/5 flex items-start gap-2">
                       <span className="text-purple-400 text-xs flex-shrink-0 mt-0.5">📎</span>
@@ -209,7 +430,6 @@ export default function DebatePage() {
                 </div>
               ))}
 
-              {/* Indicador de carga de agentes pendientes */}
               {cargando && estado === 'debatiendo' && contexto && argumentos.length < contexto.agentes.length && (
                 <div className="border-l-2 border-gray-700 bg-gray-900 rounded-xl p-5 animate-pulse">
                   <div className="flex items-center gap-3">
@@ -229,7 +449,6 @@ export default function DebatePage() {
           <div className="space-y-5">
             <h2 className="text-lg font-semibold text-white">Árbol de argumentos</h2>
 
-            {/* Recomendación */}
             <div className={`border rounded-xl p-5 ${COLOR_RECOMENDACION[arbol.recomendacion] || 'bg-gray-900 border-gray-700'}`}>
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
@@ -250,10 +469,7 @@ export default function DebatePage() {
               )}
             </div>
 
-            {/* Grid de detalles */}
             <div className="grid md:grid-cols-2 gap-4">
-
-              {/* Acuerdos */}
               {arbol.acuerdos.length > 0 && (
                 <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                   <h3 className="text-sm font-semibold text-green-400 mb-3">
@@ -262,15 +478,12 @@ export default function DebatePage() {
                   <ul className="space-y-2">
                     {arbol.acuerdos.map((a, i) => (
                       <li key={i} className="text-sm text-gray-300">
-                        <span className="text-green-500 mr-1.5">·</span>
-                        {a.punto}
+                        <span className="text-green-500 mr-1.5">·</span>{a.punto}
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
-
-              {/* Divergencias */}
               {arbol.divergencias.length > 0 && (
                 <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                   <h3 className="text-sm font-semibold text-red-400 mb-3">
@@ -279,42 +492,31 @@ export default function DebatePage() {
                   <ul className="space-y-2">
                     {arbol.divergencias.map((d, i) => (
                       <li key={i} className="text-sm text-gray-300">
-                        <span className="text-red-500 mr-1.5">·</span>
-                        {d.punto}
+                        <span className="text-red-500 mr-1.5">·</span>{d.punto}
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
-
-              {/* Fortalezas */}
               {arbol.fortalezas_idea.length > 0 && (
                 <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                  <h3 className="text-sm font-semibold text-blue-400 mb-3">
-                    ↑ Fortalezas de la idea
-                  </h3>
+                  <h3 className="text-sm font-semibold text-blue-400 mb-3">↑ Fortalezas de la idea</h3>
                   <ul className="space-y-2">
                     {arbol.fortalezas_idea.map((f, i) => (
                       <li key={i} className="text-sm text-gray-300">
-                        <span className="text-blue-500 mr-1.5">·</span>
-                        {f}
+                        <span className="text-blue-500 mr-1.5">·</span>{f}
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
-
-              {/* Debilidades */}
               {arbol.debilidades_idea.length > 0 && (
                 <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                  <h3 className="text-sm font-semibold text-orange-400 mb-3">
-                    ↓ Debilidades de la idea
-                  </h3>
+                  <h3 className="text-sm font-semibold text-orange-400 mb-3">↓ Debilidades de la idea</h3>
                   <ul className="space-y-2">
                     {arbol.debilidades_idea.map((d, i) => (
                       <li key={i} className="text-sm text-gray-300">
-                        <span className="text-orange-500 mr-1.5">·</span>
-                        {d}
+                        <span className="text-orange-500 mr-1.5">·</span>{d}
                       </li>
                     ))}
                   </ul>
@@ -322,25 +524,28 @@ export default function DebatePage() {
               )}
             </div>
 
-            {/* Condiciones */}
             {arbol.condiciones.length > 0 && (
               <div className="bg-yellow-950/30 border border-yellow-800 rounded-xl p-5">
-                <h3 className="text-sm font-semibold text-yellow-400 mb-3">
-                  ⚠ Condiciones para viabilidad
-                </h3>
+                <h3 className="text-sm font-semibold text-yellow-400 mb-3">⚠ Condiciones para viabilidad</h3>
                 <ul className="space-y-2">
                   {arbol.condiciones.map((c, i) => (
                     <li key={i} className="text-sm text-yellow-200 flex gap-2">
-                      <span className="text-yellow-500 flex-shrink-0">{i + 1}.</span>
-                      {c}
+                      <span className="text-yellow-500 flex-shrink-0">{i + 1}.</span>{c}
                     </li>
                   ))}
                 </ul>
               </div>
             )}
 
-            {/* Botón nueva evaluación */}
-            <div className="flex justify-center pt-4">
+            <div className="flex justify-center gap-3 pt-4 print:hidden">
+              {sessionId && (
+                <button
+                  onClick={() => setMostrarEncuesta(true)}
+                  className="border border-blue-700 text-blue-300 hover:bg-blue-900/30 font-semibold px-6 py-3 rounded-xl transition text-sm"
+                >
+                  ★ Valorar debate
+                </button>
+              )}
               <button
                 onClick={() => { reset(); router.push('/') }}
                 className="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-8 py-3 rounded-xl transition text-sm"
@@ -351,7 +556,6 @@ export default function DebatePage() {
           </div>
         )}
 
-        {/* Estado vacío mientras carga */}
         {cargando && argumentos.length === 0 && (
           <div className="text-center py-20">
             <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />

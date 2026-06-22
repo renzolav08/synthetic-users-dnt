@@ -57,6 +57,7 @@ interface DebateStore {
   arbol: ArbolArgumentos | null
   error: string | null
   insights_exploracion: Record<string, unknown> | null
+  sessionId: string | null
   setIdea: (idea: string) => void
   setEstado: (estado: Estado) => void
   setContexto: (contexto: Contexto) => void
@@ -64,6 +65,7 @@ interface DebateStore {
   setArbol: (arbol: ArbolArgumentos) => void
   setError: (error: string) => void
   setInsightsExploracion: (insights: Record<string, unknown> | null) => void
+  setSessionId: (id: string) => void
   reset: () => void
 }
 
@@ -75,6 +77,7 @@ export const useDebateStore = create<DebateStore>((set) => ({
   arbol: null,
   error: null,
   insights_exploracion: null,
+  sessionId: null,
   setIdea: (idea) => set({ idea }),
   setEstado: (estado) => set({ estado }),
   setContexto: (contexto) => set({ contexto }),
@@ -82,8 +85,9 @@ export const useDebateStore = create<DebateStore>((set) => ({
   setArbol: (arbol) => set({ arbol }),
   setError: (error) => set({ error, estado: 'error' }),
   setInsightsExploracion: (insights) => set({ insights_exploracion: insights }),
+  setSessionId: (id) => set({ sessionId: id }),
   reset: () => set({
     idea: '', estado: 'idle', contexto: null,
-    argumentos: [], arbol: null, error: null, insights_exploracion: null,
+    argumentos: [], arbol: null, error: null, insights_exploracion: null, sessionId: null,
   }),
 }))

@@ -99,6 +99,16 @@ export default function Home() {
         ))}
       </div>
 
+      {/* Link al historial */}
+      <div className="mt-6">
+        <a
+          href="/historial"
+          className="text-xs text-gray-600 hover:text-gray-400 transition underline underline-offset-2"
+        >
+          Ver historial de debates →
+        </a>
+      </div>
+
     </main>
   )
 }
