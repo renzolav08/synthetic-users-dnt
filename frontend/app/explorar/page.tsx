@@ -21,12 +21,6 @@ const COLOR_TIPO: Record<string, string> = {
   regulador:     'text-orange-400',
 }
 
-const ICONO_TIPO: Record<string, string> = {
-  deseabilidad: '👥',
-  factibilidad: '⚙️',
-  viabilidad:   '💰',
-  adaptabilidad:'🌍',
-}
 
 const COLOR_RIESGO: Record<string, string> = {
   alto:  'bg-red-900/40 border-red-800 text-red-400',
@@ -149,26 +143,29 @@ function SupuestosPanel({ idea }: { idea: string }) {
                   </button>
 
                   <div className="flex-1 min-w-0">
-                    {/* Badges */}
-                    <div className="flex items-center gap-1 mb-1 flex-wrap">
-                      <span className="text-xs opacity-60">{ICONO_TIPO[sup.tipo] ?? '❓'}</span>
+                    {/* Badge de riesgo */}
+                    <div className="flex items-center gap-1 mb-1.5">
                       <span className={`text-xs px-1.5 py-0.5 rounded-full border leading-none ${COLOR_RIESGO[sup.nivel_riesgo]}`}>
                         {sup.nivel_riesgo}
                       </span>
+                      <span className="text-xs text-gray-600">{sup.tipo}</span>
                     </div>
 
-                    {/* Enunciado editable */}
+                    {/* Enunciado editable — texto completo visible */}
                     {editando ? (
                       <div className="flex gap-1">
-                        <input
+                        <textarea
                           autoFocus
                           value={textoEdit}
+                          rows={3}
                           onChange={e => setTextoEdit(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') guardarEdicion(sup.id); if (e.key === 'Escape') setEditandoId(null) }}
-                          className="flex-1 bg-gray-800 border border-blue-600 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none min-w-0"
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); guardarEdicion(sup.id) } if (e.key === 'Escape') setEditandoId(null) }}
+                          className="flex-1 bg-gray-800 border border-blue-600 rounded px-1.5 py-1 text-xs text-white focus:outline-none min-w-0 resize-none"
                         />
-                        <button onClick={() => guardarEdicion(sup.id)} className="text-green-400 text-xs px-1 hover:text-green-300">✓</button>
-                        <button onClick={() => setEditandoId(null)} className="text-gray-500 text-xs px-1 hover:text-gray-300">✕</button>
+                        <div className="flex flex-col gap-1">
+                          <button onClick={() => guardarEdicion(sup.id)} className="text-green-400 text-xs px-1 hover:text-green-300">✓</button>
+                          <button onClick={() => setEditandoId(null)} className="text-gray-500 text-xs px-1 hover:text-gray-300">✕</button>
+                        </div>
                       </div>
                     ) : (
                       <button
@@ -176,7 +173,7 @@ function SupuestosPanel({ idea }: { idea: string }) {
                         className="text-left w-full"
                         title="Clic para editar"
                       >
-                        <p className="text-gray-300 text-xs leading-snug line-clamp-2 hover:text-white transition-colors">
+                        <p className="text-gray-300 text-xs leading-relaxed hover:text-white transition-colors">
                           {sup.enunciado}
                         </p>
                       </button>
@@ -309,11 +306,45 @@ function PerfilesPanel({
     }
   }
 
+  // Contador animado mientras se generan perfiles
+  const [contadorAnim, setContadorAnim] = useState(0)
+  useEffect(() => {
+    if (!cargando) { setContadorAnim(0); return }
+    const cantidad = 4
+    let i = 0
+    const iv = setInterval(() => {
+      i += 1
+      setContadorAnim(Math.min(i, cantidad - 1))
+      if (i >= cantidad - 1) clearInterval(iv)
+    }, 1800)
+    return () => clearInterval(iv)
+  }, [cargando])
+
   if (cargando) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 gap-3">
-        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-gray-400 text-sm">Generando perfiles para {stakeholder.nombre}...</p>
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <div className="relative w-12 h-12">
+          <div className="w-12 h-12 border-2 border-blue-800 rounded-full" />
+          <div className="absolute inset-0 w-12 h-12 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+        <div className="text-center">
+          <p className="text-white text-sm font-medium">
+            Generando perfil {contadorAnim + 1} de 4
+          </p>
+          <p className="text-gray-500 text-xs mt-1">
+            Construyendo {stakeholder.nombre.toLowerCase()}...
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className={`w-2 h-2 rounded-full transition-all duration-500 ${
+                i <= contadorAnim ? 'bg-blue-500' : 'bg-gray-700'
+              }`}
+            />
+          ))}
+        </div>
       </div>
     )
   }
