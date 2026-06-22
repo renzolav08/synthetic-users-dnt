@@ -780,13 +780,25 @@ async def conversar_con_perfil(
     perfil: dict,
     idea_texto: str,
     historial: list[dict],
-    pregunta: str
+    pregunta: str,
+    supuestos_activos: list[dict] | None = None,
 ) -> dict:
     """
     El emprendedor hace una pregunta; el perfil sintético responde
     desde su perspectiva e identidad.
     Extrae insights JTBD cuando hay al menos 4 mensajes en el historial.
+    Si se pasan supuestos_activos, los aborda naturalmente y devuelve evaluación.
     """
+    supuestos_bloque = ""
+    if supuestos_activos:
+        lista = "\n".join(f'- [{s["id"]}] {s["enunciado"]}' for s in supuestos_activos)
+        supuestos_bloque = f"""
+
+SUPUESTOS A VALIDAR (el emprendedor quiere saber si aplican en tu caso):
+{lista}
+Si alguno es relevante para la pregunta actual, abórdalo naturalmente desde tu experiencia.
+No los enumeres — habla como si fueran parte de tu vivencia personal."""
+
     sistema = f"""Eres {perfil['nombre']}, {perfil['ocupacion']} en {perfil['ubicacion']}.
 
 TU IDENTIDAD:
@@ -804,7 +816,7 @@ TU FORMA DE HABLAR:
 - Tono: {perfil['forma_de_hablar']['tono_emocional']}
 - Frases típicas: {', '.join(perfil['forma_de_hablar']['frases_caracteristicas'])}
 
-CONTEXTO: El emprendedor te está entrevistando sobre esta idea: {idea_texto}
+CONTEXTO: El emprendedor te está entrevistando sobre esta idea: {idea_texto}{supuestos_bloque}
 
 REGLAS ESTRICTAS:
 - Habla SIEMPRE en primera persona como ese personaje
@@ -838,7 +850,47 @@ REGLAS ESTRICTAS:
             {"rol": "perfil", "contenido": respuesta}
         ], idea_texto)
 
-    return {"respuesta": respuesta, "insights_jtbd": insights}
+    supuestos_evaluados: list[dict] = []
+    if supuestos_activos:
+        supuestos_evaluados = await _evaluar_supuestos_en_respuesta(
+            respuesta, pregunta, supuestos_activos
+        )
+
+    return {"respuesta": respuesta, "insights_jtbd": insights, "supuestos_evaluados": supuestos_evaluados}
+
+
+async def _evaluar_supuestos_en_respuesta(
+    respuesta: str,
+    pregunta: str,
+    supuestos: list[dict],
+) -> list[dict]:
+    """Determina qué supuestos fueron mencionados en la respuesta y con qué veredicto."""
+    lista = "\n".join(f'- id={s["id"]}: {s["enunciado"]}' for s in supuestos)
+    prompt = f"""Analiza si la siguiente respuesta de un usuario aporta evidencia sobre
+alguno de estos supuestos de negocio. Solo evalúa los que el usuario abordó explícita
+o implícitamente. Ignora los que no se mencionaron.
+
+PREGUNTA: {pregunta}
+RESPUESTA: {respuesta}
+
+SUPUESTOS:
+{lista}
+
+Responde ÚNICAMENTE con JSON:
+{{"evaluados": [{{"supuesto_id": "id", "veredicto": "validado|parcial|refutado"}}]}}
+Si ninguno fue mencionado: {{"evaluados": []}}"""
+
+    try:
+        r = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=200,
+            temperature=0,
+        )
+        return json.loads(r.choices[0].message.content).get("evaluados", [])
+    except Exception:
+        return []
 
 
 async def _extraer_insights_jtbd(

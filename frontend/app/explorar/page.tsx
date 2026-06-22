@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useExplorarStore, type PerfilSintetico, type Stakeholder, type InsightsJTBD } from '@/store/useExplorarStore'
-import { useSupuestosStore } from '@/store/useSupuestosStore'
+import { useSupuestosStore, type Supuesto } from '@/store/useSupuestosStore'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
 
@@ -21,23 +21,200 @@ const COLOR_TIPO: Record<string, string> = {
   regulador:     'text-orange-400',
 }
 
+const ICONO_TIPO: Record<string, string> = {
+  deseabilidad: '👥',
+  factibilidad: '⚙️',
+  viabilidad:   '💰',
+  adaptabilidad:'🌍',
+}
+
+const COLOR_RIESGO: Record<string, string> = {
+  alto:  'bg-red-900/40 border-red-800 text-red-400',
+  medio: 'bg-yellow-900/40 border-yellow-800 text-yellow-400',
+  bajo:  'bg-gray-800 border-gray-700 text-gray-500',
+}
+
+const COLOR_VEREDICTO_ICON: Record<string, string> = {
+  validado: 'text-green-400',
+  parcial:  'text-yellow-400',
+  refutado: 'text-red-400',
+}
+
+// ─── Panel supuestos interactivo ──────────────────────────────────────────────
+function SupuestosPanel({ idea }: { idea: string }) {
+  const {
+    supuestos, cargando, error, activosIds, evidencia,
+    setSupuestos, setCargando, setError, toggleActivo, editarEnunciado,
+  } = useSupuestosStore()
+
+  const [expandido, setExpandido] = useState(true)
+  const [editandoId, setEditandoId] = useState<string | null>(null)
+  const [textoEdit, setTextoEdit] = useState('')
+
+  // Generar supuestos en background al montar
+  useEffect(() => {
+    if (supuestos.length > 0 || cargando) return
+    setCargando(true)
+    setError(null)
+    fetch(`${API}/supuestos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idea_texto: idea }),
+    })
+      .then(r => r.json())
+      .then(d => setSupuestos(d.supuestos ?? [], d.razonamiento ?? ''))
+      .catch(() => setError('No se pudieron generar supuestos'))
+      .finally(() => setCargando(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idea])
+
+  function iniciarEdicion(sup: Supuesto) {
+    setEditandoId(sup.id)
+    setTextoEdit(sup.enunciado)
+  }
+
+  function guardarEdicion(id: string) {
+    if (textoEdit.trim()) editarEnunciado(id, textoEdit.trim())
+    setEditandoId(null)
+  }
+
+  const totalActivos = activosIds.length
+  const totalEvidencia = Object.values(evidencia).reduce(
+    (acc, e) => acc + e.validado + e.parcial + e.refutado, 0
+  )
+
+  return (
+    <div className="mt-4 pt-4 border-t border-gray-800">
+      {/* Header del panel */}
+      <button
+        onClick={() => setExpandido(v => !v)}
+        className="w-full flex items-center justify-between px-1 mb-2 group"
+      >
+        <div className="flex items-center gap-2">
+          <span className={`text-gray-600 text-xs transition-transform ${expandido ? 'rotate-90' : ''}`}>▶</span>
+          <p className="text-xs text-gray-500 uppercase tracking-wider">Supuestos</p>
+          {cargando && (
+            <span className="w-3 h-3 border border-blue-500 border-t-transparent rounded-full animate-spin" />
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {totalEvidencia > 0 && (
+            <span className="text-xs bg-green-900/40 border border-green-800 text-green-400 px-1.5 py-0.5 rounded-full">
+              {totalEvidencia} resp.
+            </span>
+          )}
+          <span className="text-xs text-gray-600">{totalActivos}/{supuestos.length}</span>
+        </div>
+      </button>
+
+      {!expandido ? null : error ? (
+        <p className="text-xs text-red-400 px-1">{error}</p>
+      ) : cargando && supuestos.length === 0 ? (
+        <div className="px-1 py-3 text-center">
+          <p className="text-xs text-gray-600">Analizando supuestos de tu modelo...</p>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {supuestos.map(sup => {
+            const activo = activosIds.includes(sup.id)
+            const ev = evidencia[sup.id]
+            const hayEvidencia = ev && (ev.validado + ev.parcial + ev.refutado) > 0
+            const editando = editandoId === sup.id
+
+            return (
+              <div
+                key={sup.id}
+                className={`rounded-lg border transition-all ${
+                  activo
+                    ? 'bg-blue-950/30 border-blue-800/60'
+                    : 'bg-gray-900/40 border-gray-800/60 opacity-50'
+                }`}
+              >
+                <div className="flex items-start gap-2 p-2">
+                  {/* Toggle */}
+                  <button
+                    onClick={() => toggleActivo(sup.id)}
+                    className={`w-4 h-4 rounded flex-shrink-0 mt-0.5 border transition-all ${
+                      activo
+                        ? 'bg-blue-600 border-blue-500'
+                        : 'bg-gray-800 border-gray-600 hover:border-gray-400'
+                    }`}
+                    title={activo ? 'Desactivar' : 'Activar'}
+                  >
+                    {activo && (
+                      <svg viewBox="0 0 10 8" className="w-full h-full p-0.5" fill="none" stroke="white" strokeWidth="2">
+                        <path d="M1 4l3 3 5-6" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </button>
+
+                  <div className="flex-1 min-w-0">
+                    {/* Badges */}
+                    <div className="flex items-center gap-1 mb-1 flex-wrap">
+                      <span className="text-xs opacity-60">{ICONO_TIPO[sup.tipo] ?? '❓'}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full border leading-none ${COLOR_RIESGO[sup.nivel_riesgo]}`}>
+                        {sup.nivel_riesgo}
+                      </span>
+                    </div>
+
+                    {/* Enunciado editable */}
+                    {editando ? (
+                      <div className="flex gap-1">
+                        <input
+                          autoFocus
+                          value={textoEdit}
+                          onChange={e => setTextoEdit(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') guardarEdicion(sup.id); if (e.key === 'Escape') setEditandoId(null) }}
+                          className="flex-1 bg-gray-800 border border-blue-600 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none min-w-0"
+                        />
+                        <button onClick={() => guardarEdicion(sup.id)} className="text-green-400 text-xs px-1 hover:text-green-300">✓</button>
+                        <button onClick={() => setEditandoId(null)} className="text-gray-500 text-xs px-1 hover:text-gray-300">✕</button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => iniciarEdicion(sup)}
+                        className="text-left w-full"
+                        title="Clic para editar"
+                      >
+                        <p className="text-gray-300 text-xs leading-snug line-clamp-2 hover:text-white transition-colors">
+                          {sup.enunciado}
+                        </p>
+                      </button>
+                    )}
+
+                    {/* Evidencia acumulada */}
+                    {hayEvidencia && (
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        {ev.validado > 0 && (
+                          <span className="text-xs text-green-400">✓{ev.validado}</span>
+                        )}
+                        {ev.parcial > 0 && (
+                          <span className="text-xs text-yellow-400">◐{ev.parcial}</span>
+                        )}
+                        {ev.refutado > 0 && (
+                          <span className="text-xs text-red-400">✗{ev.refutado}</span>
+                        )}
+                        <span className="text-gray-700 text-xs">perfiles</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Panel izquierdo: lista de stakeholders ───────────────────────────────────
-function StakeholderCard({
-  sk,
-  activo,
-  onClick,
-}: {
-  sk: Stakeholder
-  activo: boolean
-  onClick: () => void
-}) {
+function StakeholderCard({ sk, activo, onClick }: { sk: Stakeholder; activo: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
       className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-        activo
-          ? 'bg-blue-950 border-blue-600'
-          : 'bg-gray-900 border-gray-800 hover:border-gray-600'
+        activo ? 'bg-blue-950 border-blue-600' : 'bg-gray-900 border-gray-800 hover:border-gray-600'
       }`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -58,19 +235,10 @@ function StakeholderCard({
 
 // ─── Panel central: perfiles de un stakeholder ───────────────────────────────
 function PerfilesPanel({
-  stakeholder,
-  idea,
-  sector,
-  pais,
-  perfilActivoIdx,
-  onSelectPerfil,
+  stakeholder, idea, sector, pais, perfilActivoIdx, onSelectPerfil,
 }: {
-  stakeholder: Stakeholder
-  idea: string
-  sector: string
-  pais: string
-  perfilActivoIdx: number | null
-  onSelectPerfil: (idx: number) => void
+  stakeholder: Stakeholder; idea: string; sector: string; pais: string
+  perfilActivoIdx: number | null; onSelectPerfil: (idx: number) => void
 }) {
   const { perfilesPor, cargandoPerfilesPor, setPerfilesPor, appendPerfilesPor,
           setCargandoPerfilesPor, patronesPor, cargandoPatronesPor, setPatronesPor,
@@ -81,7 +249,6 @@ function PerfilesPanel({
   const patrones = patronesPor[stakeholder.id]
   const cargandoPatrones = cargandoPatronesPor[stakeholder.id] ?? false
 
-  // Cuántos perfiles tienen insights completos
   const insightsDisponibles = perfiles
     .map((_, idx) => insightsPor[`${stakeholder.id}::${idx}`])
     .filter(Boolean)
@@ -91,55 +258,33 @@ function PerfilesPanel({
 
   useEffect(() => {
     if (perfiles.length > 0 || cargando) return
-
-    async function cargar() {
-      setCargandoPerfilesPor(stakeholder.id, true)
-      try {
-        const res = await fetch(`${API}/explorar/perfiles-stakeholder`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            idea_texto: idea,
-            stakeholder: stakeholder,
-            sector,
-            pais,
-            cantidad: 4,
-          }),
-        })
-        const data = await res.json()
-        setPerfilesPor(stakeholder.id, data.perfiles)
-      } catch {
-        // silencioso — el usuario puede reintentar cambiando de stakeholder
-      } finally {
-        setCargandoPerfilesPor(stakeholder.id, false)
-      }
-    }
-
-    cargar()
+    setCargandoPerfilesPor(stakeholder.id, true)
+    fetch(`${API}/explorar/perfiles-stakeholder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idea_texto: idea, stakeholder, sector, pais, cantidad: 4 }),
+    })
+      .then(r => r.json())
+      .then(d => setPerfilesPor(stakeholder.id, d.perfiles))
+      .catch(() => {})
+      .finally(() => setCargandoPerfilesPor(stakeholder.id, false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stakeholder.id])
 
   async function generarMasPerfiles() {
-    setGenerandoMas(true)
-    setErrorMas(null)
+    setGenerandoMas(true); setErrorMas(null)
     try {
       const res = await fetch(`${API}/explorar/perfiles-stakeholder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          idea_texto: idea,
-          stakeholder: stakeholder,
-          sector,
-          pais,
-          cantidad: 2,
-        }),
+        body: JSON.stringify({ idea_texto: idea, stakeholder, sector, pais, cantidad: 2 }),
       })
-      if (!res.ok) throw new Error(`Error ${res.status}: ${res.statusText}`)
+      if (!res.ok) throw new Error(`Error ${res.status}`)
       const data = await res.json()
-      if (!data.perfiles?.length) throw new Error('El servidor no devolvió perfiles')
+      if (!data.perfiles?.length) throw new Error('Sin perfiles')
       appendPerfilesPor(stakeholder.id, data.perfiles)
     } catch (e: unknown) {
-      setErrorMas(e instanceof Error ? e.message : 'Error al generar perfiles')
+      setErrorMas(e instanceof Error ? e.message : 'Error')
     } finally {
       setGenerandoMas(false)
     }
@@ -153,10 +298,8 @@ function PerfilesPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          stakeholder_id: stakeholder.id,
-          stakeholder_nombre: stakeholder.nombre,
-          idea_texto: idea,
-          insights_por_perfil: insightsDisponibles,
+          stakeholder_id: stakeholder.id, stakeholder_nombre: stakeholder.nombre,
+          idea_texto: idea, insights_por_perfil: insightsDisponibles,
         }),
       })
       const data = await res.json()
@@ -184,20 +327,14 @@ function PerfilesPanel({
         </div>
         <div className="flex items-center gap-2">
           {perfiles.length > 0 && (
-            <button
-              onClick={generarMasPerfiles}
-              disabled={generandoMas}
-              className="text-xs text-gray-400 hover:text-white border border-dashed border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition disabled:opacity-40"
-            >
+            <button onClick={generarMasPerfiles} disabled={generandoMas}
+              className="text-xs text-gray-400 hover:text-white border border-dashed border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition disabled:opacity-40">
               {generandoMas ? '...' : '+ Más perfiles'}
             </button>
           )}
           {insightsDisponibles.length >= 2 && !patrones && (
-            <button
-              onClick={detectarPatrones}
-              disabled={cargandoPatrones}
-              className="text-xs bg-purple-800 hover:bg-purple-700 disabled:opacity-50 text-purple-200 px-3 py-1.5 rounded-lg transition"
-            >
+            <button onClick={detectarPatrones} disabled={cargandoPatrones}
+              className="text-xs bg-purple-800 hover:bg-purple-700 disabled:opacity-50 text-purple-200 px-3 py-1.5 rounded-lg transition">
               {cargandoPatrones ? 'Analizando...' : 'Detectar patrones'}
             </button>
           )}
@@ -205,42 +342,31 @@ function PerfilesPanel({
       </div>
 
       {errorMas && (
-        <p className="text-red-400 text-xs bg-red-950/40 border border-red-800 rounded-lg px-3 py-2">
-          ⚠ {errorMas}
-        </p>
+        <p className="text-red-400 text-xs bg-red-950/40 border border-red-800 rounded-lg px-3 py-2">⚠ {errorMas}</p>
       )}
 
-      {/* Preguntas sugeridas */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
         <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Preguntas sugeridas</p>
         <ul className="space-y-1.5">
           {stakeholder.preguntas_clave.map((q, i) => (
             <li key={i} className="text-gray-300 text-xs flex gap-2">
-              <span className="text-blue-500 flex-shrink-0">{i + 1}.</span>
-              {q}
+              <span className="text-blue-500 flex-shrink-0">{i + 1}.</span>{q}
             </li>
           ))}
         </ul>
       </div>
 
-      {/* Tarjetas de perfiles */}
       <div className="space-y-3">
         {perfiles.map((perfil, idx) => {
           const convKey = `${stakeholder.id}::${idx}`
           const tieneInsights = !!insightsPor[convKey]
           const mensajes = historialPor[convKey] ?? []
           const seleccionado = perfilActivoIdx === idx
-
           return (
-            <button
-              key={idx}
-              onClick={() => onSelectPerfil(idx)}
+            <button key={idx} onClick={() => onSelectPerfil(idx)}
               className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-                seleccionado
-                  ? 'bg-blue-950 border-blue-600'
-                  : 'bg-gray-900 border-gray-800 hover:border-gray-600'
-              }`}
-            >
+                seleccionado ? 'bg-blue-950 border-blue-600' : 'bg-gray-900 border-gray-800 hover:border-gray-600'
+              }`}>
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-white font-medium text-sm">{perfil.nombre}</p>
@@ -248,9 +374,7 @@ function PerfilesPanel({
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   {tieneInsights && (
-                    <span className="text-xs bg-green-900/50 border border-green-700 text-green-300 px-2 py-0.5 rounded-full">
-                      insights ✓
-                    </span>
+                    <span className="text-xs bg-green-900/50 border border-green-700 text-green-300 px-2 py-0.5 rounded-full">insights ✓</span>
                   )}
                   {mensajes.length > 0 && (
                     <span className="text-xs text-gray-500">{Math.floor(mensajes.length / 2)} preguntas</span>
@@ -263,40 +387,27 @@ function PerfilesPanel({
         })}
       </div>
 
-      {/* Patrones detectados */}
       {patrones && (
         <div className="bg-purple-950/30 border border-purple-800 rounded-xl p-5 space-y-4">
           <h3 className="text-purple-300 font-semibold text-sm">Patrones del segmento</h3>
-
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Job principal</p>
             <p className="text-white text-sm leading-relaxed">{patrones.job_principal}</p>
           </div>
-
           <div className="grid grid-cols-2 gap-3">
             <div>
               <p className="text-xs text-green-400 mb-1">Patrones comunes</p>
-              <ul className="space-y-1">
-                {patrones.patrones_comunes.map((p, i) => (
-                  <li key={i} className="text-gray-300 text-xs">· {p}</li>
-                ))}
-              </ul>
+              <ul className="space-y-1">{patrones.patrones_comunes.map((p, i) => <li key={i} className="text-gray-300 text-xs">· {p}</li>)}</ul>
             </div>
             <div>
               <p className="text-xs text-red-400 mb-1">Fricciones críticas</p>
-              <ul className="space-y-1">
-                {patrones.fricciones_criticas.map((f, i) => (
-                  <li key={i} className="text-gray-300 text-xs">· {f}</li>
-                ))}
-              </ul>
+              <ul className="space-y-1">{patrones.fricciones_criticas.map((f, i) => <li key={i} className="text-gray-300 text-xs">· {f}</li>)}</ul>
             </div>
           </div>
-
           <div>
             <p className="text-xs text-yellow-400 mb-1">Oportunidad clave</p>
             <p className="text-gray-200 text-sm">{patrones.oportunidad_clave}</p>
           </div>
-
           {patrones.segmentos_identificados.length > 0 && (
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Sub-segmentos</p>
@@ -317,23 +428,18 @@ function PerfilesPanel({
   )
 }
 
-// ─── Panel derecho: conversación con un perfil ────────────────────────────────
-function ConversacionPanel({
-  perfil,
-  convKey,
-  idea,
-}: {
-  perfil: PerfilSintetico
-  convKey: string
-  idea: string
-}) {
-  const { historialPor, insightsPor, addMensaje, setInsights, setRespondiendo, respondiendo } =
-    useExplorarStore()
+// ─── Panel derecho: conversación ─────────────────────────────────────────────
+function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico; convKey: string; idea: string }) {
+  const { historialPor, insightsPor, addMensaje, setInsights, setRespondiendo, respondiendo } = useExplorarStore()
+  const { supuestos, activosIds, registrarEvidencia } = useSupuestosStore()
 
   const historial = historialPor[convKey] ?? []
   const insights  = insightsPor[convKey]
   const [pregunta, setPregunta] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Supuestos activos filtrados
+  const supuestosActivos = supuestos.filter(s => activosIds.includes(s.id))
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -355,12 +461,20 @@ function ConversacionPanel({
           idea_texto: idea,
           historial: [...historial, { rol: 'emprendedor', contenido: texto }],
           pregunta: texto,
+          // Pasar solo campos esenciales de supuestos activos para no inflar el payload
+          supuestos_activos: supuestosActivos.length > 0
+            ? supuestosActivos.map(s => ({ id: s.id, enunciado: s.enunciado }))
+            : null,
         }),
       })
       const data = await res.json()
       addMensaje(convKey, { rol: 'perfil', contenido: data.respuesta })
-      if (data.insights_jtbd) {
-        setInsights(convKey, data.insights_jtbd)
+      if (data.insights_jtbd) setInsights(convKey, data.insights_jtbd)
+      // Registrar evidencia de supuestos evaluados en esta respuesta
+      if (data.supuestos_evaluados?.length) {
+        for (const ev of data.supuestos_evaluados) {
+          registrarEvidencia(ev.supuesto_id, ev.veredicto)
+        }
       }
     } catch {
       addMensaje(convKey, { rol: 'perfil', contenido: '(Error al conectar con el servidor)' })
@@ -370,16 +484,12 @@ function ConversacionPanel({
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      enviar()
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() }
   }
 
   return (
     <div className="flex flex-col h-full">
-
-      {/* Cabecera del perfil */}
+      {/* Cabecera */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 flex-shrink-0">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-full bg-blue-700 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
@@ -391,8 +501,6 @@ function ConversacionPanel({
             <p className="text-blue-300 text-xs mt-1 italic">"{perfil.variante_descripcion}"</p>
           </div>
         </div>
-
-        {/* Jobs rápidos */}
         <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
           <div className="bg-gray-800 rounded-lg p-2">
             <p className="text-gray-500 mb-0.5">Job funcional</p>
@@ -407,34 +515,43 @@ function ConversacionPanel({
             <p className="text-gray-200 line-clamp-2">{perfil.job_social}</p>
           </div>
         </div>
+
+        {/* Supuestos activos — indicador en la cabecera del perfil */}
+        {supuestosActivos.length > 0 && (
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-500">Explorando:</span>
+            {supuestosActivos.slice(0, 3).map(s => (
+              <span key={s.id} className="text-xs bg-blue-950/50 border border-blue-800/50 text-blue-300 px-2 py-0.5 rounded-full truncate max-w-[140px]">
+                {s.enunciado.slice(0, 35)}{s.enunciado.length > 35 ? '…' : ''}
+              </span>
+            ))}
+            {supuestosActivos.length > 3 && (
+              <span className="text-xs text-gray-500">+{supuestosActivos.length - 3}</span>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Historial de mensajes */}
+      {/* Historial */}
       <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-1">
-
         {historial.length === 0 && (
           <div className="text-center py-8">
-            <p className="text-gray-500 text-sm">
-              Inicia la conversación con {perfil.nombre.split(' ')[0]}
-            </p>
-            <p className="text-gray-600 text-xs mt-1">
-              Habla como si fuera una entrevista real — pregunta por sus experiencias, no por tu solución
-            </p>
+            <p className="text-gray-500 text-sm">Inicia la conversación con {perfil.nombre.split(' ')[0]}</p>
+            {supuestosActivos.length > 0 && (
+              <p className="text-gray-600 text-xs mt-2 max-w-xs mx-auto leading-relaxed">
+                Los supuestos activos guiarán naturalmente las respuestas del perfil
+              </p>
+            )}
           </div>
         )}
 
         {historial.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex ${msg.rol === 'emprendedor' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                msg.rol === 'emprendedor'
-                  ? 'bg-blue-600 text-white rounded-br-sm'
-                  : 'bg-gray-800 text-gray-200 rounded-bl-sm'
-              }`}
-            >
+          <div key={i} className={`flex ${msg.rol === 'emprendedor' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+              msg.rol === 'emprendedor'
+                ? 'bg-blue-600 text-white rounded-br-sm'
+                : 'bg-gray-800 text-gray-200 rounded-bl-sm'
+            }`}>
               {msg.rol === 'perfil' && (
                 <p className="text-gray-500 text-xs mb-1 font-medium">{perfil.nombre.split(' ')[0]}</p>
               )}
@@ -452,16 +569,13 @@ function ConversacionPanel({
             </div>
           </div>
         )}
-
         <div ref={bottomRef} />
       </div>
 
-      {/* Insights JTBD extraídos */}
+      {/* Insights JTBD */}
       {insights && (
         <div className="bg-green-950/30 border border-green-800 rounded-xl p-4 mb-4 flex-shrink-0">
-          <p className="text-green-400 text-xs font-semibold uppercase tracking-wider mb-2">
-            Insights JTBD detectados
-          </p>
+          <p className="text-green-400 text-xs font-semibold uppercase tracking-wider mb-2">Insights JTBD detectados</p>
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div>
               <p className="text-gray-500 mb-0.5">Job funcional</p>
@@ -483,18 +597,15 @@ function ConversacionPanel({
       <div className="flex-shrink-0 flex gap-2">
         <textarea
           value={pregunta}
-          onChange={(e) => setPregunta(e.target.value)}
+          onChange={e => setPregunta(e.target.value)}
           onKeyDown={onKeyDown}
           disabled={respondiendo}
           placeholder="Pregunta algo... (Enter para enviar)"
           rows={2}
           className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-white placeholder-gray-500 text-sm resize-none focus:outline-none focus:border-blue-600 transition disabled:opacity-50"
         />
-        <button
-          onClick={enviar}
-          disabled={!pregunta.trim() || respondiendo}
-          className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 rounded-xl transition text-sm font-medium"
-        >
+        <button onClick={enviar} disabled={!pregunta.trim() || respondiendo}
+          className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 rounded-xl transition text-sm font-medium">
           →
         </button>
       </div>
@@ -502,7 +613,7 @@ function ConversacionPanel({
   )
 }
 
-// ─── Página principal de exploración ─────────────────────────────────────────
+// ─── Página principal ─────────────────────────────────────────────────────────
 export default function ExplorarPage() {
   const router = useRouter()
   const {
@@ -510,29 +621,22 @@ export default function ExplorarPage() {
     stakeholders: _stakeholders, cargandoStakeholders,
     stakeholderActivo, perfilActivoIdx,
     perfilesPor, historialPor, insightsPor,
-    errorStakeholders,
-    cargandoSintesis, errorSintesis,
+    errorStakeholders, cargandoSintesis, errorSintesis,
     setStakeholders, setCargandoStakeholders,
     setStakeholderActivo, setPerfilActivoIdx,
-    setErrorStakeholders,
-    setSintesis, setCargandoSintesis, setErrorSintesis,
+    setErrorStakeholders, setSintesis, setCargandoSintesis, setErrorSintesis,
   } = useExplorarStore()
 
-  const { supuestos } = useSupuestosStore()
-
-  // Protección contra undefined en el primer render (hidratación Zustand/Next.js)
+  const { supuestos, activosIds } = useSupuestosStore()
   const stakeholders = _stakeholders ?? []
 
-  // Si no hay idea, redirigir al inicio
   useEffect(() => {
     if (!idea) router.replace('/')
   }, [idea, router])
 
-  // Función de carga reutilizable (también usada en reintento)
   async function cargarStakeholders() {
     if (!idea) return
-    setCargandoStakeholders(true)
-    setErrorStakeholders(null)
+    setCargandoStakeholders(true); setErrorStakeholders(null)
     try {
       const res = await fetch(`${API}/explorar/stakeholders`, {
         method: 'POST',
@@ -546,27 +650,22 @@ export default function ExplorarPage() {
       useExplorarStore.getState().setIdea(idea, data.sector ?? '', data.pais ?? '')
       setStakeholderActivo(data.stakeholders[0].id)
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Error al conectar con el backend'
-      setErrorStakeholders(msg)
+      setErrorStakeholders(e instanceof Error ? e.message : 'Error al conectar con el backend')
     } finally {
       setCargandoStakeholders(false)
     }
   }
 
-  // Cargar stakeholders al montar
   useEffect(() => {
     if (!idea || stakeholders.length > 0 || cargandoStakeholders) return
     cargarStakeholders()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idea])
 
-  // Construir payload de síntesis a partir del historial acumulado
   async function finalizarExploracion() {
     if (!idea) return
-    setCargandoSintesis(true)
-    setErrorSintesis(null)
+    setCargandoSintesis(true); setErrorSintesis(null)
 
-    // Agrupar conversaciones por stakeholder (proteger contra undefined)
     const histSeg  = useExplorarStore.getState().historialPor  ?? {}
     const insSeg   = useExplorarStore.getState().insightsPor   ?? {}
     const perfSeg  = useExplorarStore.getState().perfilesPor   ?? {}
@@ -579,30 +678,21 @@ export default function ExplorarPage() {
           const key = `${sk.id}::${idx}`
           const historial = histSeg[key] ?? []
           if (historial.length === 0) return null
-          return {
-            nombre: p.nombre,
-            variante_descripcion: p.variante_descripcion ?? '',
-            ocupacion: p.ocupacion,
-            historial,
-            insights_jtbd: insSeg[key] ?? null,
-          }
+          return { nombre: p.nombre, variante_descripcion: p.variante_descripcion ?? '',
+                   ocupacion: p.ocupacion, historial, insights_jtbd: insSeg[key] ?? null }
         })
         .filter(Boolean)
-
       if (perfilesConversados.length === 0) return null
-      return {
-        stakeholder_id: sk.id,
-        stakeholder_nombre: sk.nombre,
-        perfiles: perfilesConversados,
-      }
+      return { stakeholder_id: sk.id, stakeholder_nombre: sk.nombre, perfiles: perfilesConversados }
     }).filter(Boolean)
 
-    // Si no hay ninguna conversación válida, abortar
     if (conversaciones.length === 0) {
-      setErrorSintesis('No se encontraron conversaciones. Habla con al menos un perfil antes de finalizar.')
-      setCargandoSintesis(false)
-      return
+      setErrorSintesis('Habla con al menos un perfil antes de finalizar.')
+      setCargandoSintesis(false); return
     }
+
+    // Pasar supuestos activos (con enunciado completo) para evaluación en síntesis
+    const supuestosParaSintesis = supuestos.filter(s => activosIds.includes(s.id))
 
     try {
       const res = await fetch(`${API}/sintetizar-exploracion`, {
@@ -611,7 +701,7 @@ export default function ExplorarPage() {
         body: JSON.stringify({
           idea_texto: idea,
           conversaciones,
-          ...(supuestos.length > 0 && { supuestos }),
+          ...(supuestosParaSintesis.length > 0 && { supuestos: supuestosParaSintesis }),
         }),
       })
       if (!res.ok) throw new Error(`Error del servidor: ${res.status}`)
@@ -619,110 +709,74 @@ export default function ExplorarPage() {
       setSintesis(data)
       router.push('/sintesis')
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Error al sintetizar'
-      setErrorSintesis(msg)
+      setErrorSintesis(e instanceof Error ? e.message : 'Error al sintetizar')
     } finally {
       setCargandoSintesis(false)
     }
   }
 
-  // ── Progreso real de exploración ─────────────────────────────────────────────
-  const MINIMO_INSIGHTS_TOTAL   = 4   // perfiles con insights completos (4+ mensajes)
-  const MINIMO_STAKEHOLDERS     = 2   // segmentos distintos cubiertos con ≥2 insights c/u
+  const MINIMO_INSIGHTS_TOTAL = 4
+  const MINIMO_STAKEHOLDERS   = 2
 
-  const insightsPorSegmento = (stakeholders ?? []).map(sk => {
+  const insightsPorSegmento = stakeholders.map(sk => {
     const perfiles = perfilesPor[sk.id] ?? []
     const conInsights = perfiles.filter((_, idx) => !!insightsPor[`${sk.id}::${idx}`]).length
     return { id: sk.id, nombre: sk.nombre, conInsights }
   })
 
-  const totalInsightosCompletos   = insightsPorSegmento.reduce((s, x) => s + x.conInsights, 0)
-  const segmentosConDosInsights   = insightsPorSegmento.filter(x => x.conInsights >= 2).length
+  const totalInsightosCompletos = insightsPorSegmento.reduce((s, x) => s + x.conInsights, 0)
+  const segmentosConDosInsights = insightsPorSegmento.filter(x => x.conInsights >= 2).length
   const puedeFinalizarExploracion = totalInsightosCompletos >= MINIMO_INSIGHTS_TOTAL &&
                                     segmentosConDosInsights >= MINIMO_STAKEHOLDERS
 
-  const skActivo = (stakeholders ?? []).find(s => s.id === stakeholderActivo) ?? null
+  const skActivo = stakeholders.find(s => s.id === stakeholderActivo) ?? null
   const perfilesActivos = skActivo ? (perfilesPor[skActivo.id] ?? []) : []
   const perfilSeleccionado = perfilActivoIdx !== null ? perfilesActivos[perfilActivoIdx] : null
-  const convKey = skActivo && perfilActivoIdx !== null
-    ? `${skActivo.id}::${perfilActivoIdx}`
-    : null
+  const convKey = skActivo && perfilActivoIdx !== null ? `${skActivo.id}::${perfilActivoIdx}` : null
 
   return (
     <main className="h-[calc(100vh-120px)] flex flex-col">
 
       {/* Barra superior */}
       <div className="border-b border-gray-800 bg-gray-900/80 backdrop-blur px-4 py-3 flex items-center justify-between flex-shrink-0">
-        <button
-          onClick={() => router.push('/')}
-          className="text-gray-400 hover:text-white text-sm transition"
-        >
+        <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm transition">
           ← Cambiar idea
         </button>
-
         <div className="flex-1 mx-6 max-w-lg">
           <p className="text-gray-400 text-xs text-center truncate">{idea}</p>
         </div>
-
         <div className="flex items-center gap-3">
-
-          {/* Indicador de progreso */}
           {stakeholders.length > 0 && !cargandoSintesis && (
             <div className="flex items-center gap-2">
-              {/* Perfiles con insights */}
-              <div className="flex items-center gap-1.5" title="Perfiles con insights completos (mín. 4 mensajes c/u)">
+              <div className="flex items-center gap-1.5">
                 <div className="flex gap-0.5">
                   {Array.from({ length: MINIMO_INSIGHTS_TOTAL }).map((_, i) => (
-                    <span
-                      key={i}
-                      className={`w-2 h-2 rounded-full ${
-                        i < totalInsightosCompletos ? 'bg-green-400' : 'bg-gray-700'
-                      }`}
-                    />
+                    <span key={i} className={`w-2 h-2 rounded-full ${i < totalInsightosCompletos ? 'bg-green-400' : 'bg-gray-700'}`} />
                   ))}
                 </div>
-                <span className="text-xs text-gray-500">
-                  {totalInsightosCompletos}/{MINIMO_INSIGHTS_TOTAL} perfiles
-                </span>
+                <span className="text-xs text-gray-500">{totalInsightosCompletos}/{MINIMO_INSIGHTS_TOTAL} perfiles</span>
               </div>
-
               <span className="text-gray-700">·</span>
-
-              {/* Segmentos cubiertos */}
-              <div className="flex items-center gap-1.5" title="Segmentos con ≥2 perfiles entrevistados">
+              <div className="flex items-center gap-1.5">
                 <div className="flex gap-0.5">
                   {Array.from({ length: MINIMO_STAKEHOLDERS }).map((_, i) => (
-                    <span
-                      key={i}
-                      className={`w-2 h-2 rounded-full ${
-                        i < segmentosConDosInsights ? 'bg-blue-400' : 'bg-gray-700'
-                      }`}
-                    />
+                    <span key={i} className={`w-2 h-2 rounded-full ${i < segmentosConDosInsights ? 'bg-blue-400' : 'bg-gray-700'}`} />
                   ))}
                 </div>
-                <span className="text-xs text-gray-500">
-                  {segmentosConDosInsights}/{MINIMO_STAKEHOLDERS} segmentos
-                </span>
+                <span className="text-xs text-gray-500">{segmentosConDosInsights}/{MINIMO_STAKEHOLDERS} segmentos</span>
               </div>
             </div>
           )}
-
           <button
             onClick={finalizarExploracion}
             disabled={!puedeFinalizarExploracion || cargandoSintesis}
             className="text-xs bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white px-4 py-1.5 rounded-lg transition font-medium"
-            title={
-              !puedeFinalizarExploracion
-                ? `Necesitas ${MINIMO_INSIGHTS_TOTAL} perfiles con insights (4+ mensajes c/u) en ${MINIMO_STAKEHOLDERS} segmentos distintos`
-                : ''
-            }
           >
             {cargandoSintesis ? 'Sintetizando...' : 'Finalizar exploración →'}
           </button>
         </div>
       </div>
 
-      {/* Error de síntesis */}
       {errorSintesis && (
         <div className="bg-red-950/60 border-b border-red-800 px-4 py-2 flex items-center justify-between flex-shrink-0">
           <p className="text-red-400 text-xs">⚠ {errorSintesis}</p>
@@ -730,14 +784,12 @@ export default function ExplorarPage() {
         </div>
       )}
 
-      {/* Layout de 3 paneles */}
+      {/* Layout 3 paneles */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* Panel izquierdo — Stakeholders */}
+        {/* Panel izquierdo — Stakeholders + Supuestos */}
         <div className="w-64 flex-shrink-0 border-r border-gray-800 overflow-y-auto p-3 space-y-2">
-          <p className="text-xs text-gray-500 uppercase tracking-wider px-1 mb-3">
-            Stakeholders detectados
-          </p>
+          <p className="text-xs text-gray-500 uppercase tracking-wider px-1 mb-3">Stakeholders</p>
 
           {cargandoStakeholders && (
             <div className="flex flex-col items-center py-10 gap-3">
@@ -748,84 +800,31 @@ export default function ExplorarPage() {
 
           {errorStakeholders && !cargandoStakeholders && (
             <div className="mx-1 mt-2 bg-red-950/50 border border-red-800 rounded-xl p-4 flex flex-col gap-3">
-              <p className="text-red-400 text-xs leading-relaxed">
-                ⚠ {errorStakeholders}
-              </p>
-              <p className="text-gray-500 text-xs">
-                Asegúrate de que el backend esté corriendo en <span className="text-gray-300 font-mono">localhost:8000</span>
-              </p>
-              <button
-                onClick={cargarStakeholders}
-                className="w-full bg-red-900 hover:bg-red-800 text-red-200 text-xs py-2 rounded-lg transition"
-              >
+              <p className="text-red-400 text-xs leading-relaxed">⚠ {errorStakeholders}</p>
+              <button onClick={cargarStakeholders}
+                className="w-full bg-red-900 hover:bg-red-800 text-red-200 text-xs py-2 rounded-lg transition">
                 Reintentar
               </button>
             </div>
           )}
 
-          {stakeholders.map((sk) => (
-            <StakeholderCard
-              key={sk.id}
-              sk={sk}
-              activo={stakeholderActivo === sk.id}
-              onClick={() => {
-                setStakeholderActivo(sk.id)
-                setPerfilActivoIdx(null)
-              }}
-            />
+          {stakeholders.map(sk => (
+            <StakeholderCard key={sk.id} sk={sk} activo={stakeholderActivo === sk.id}
+              onClick={() => { setStakeholderActivo(sk.id); setPerfilActivoIdx(null) }} />
           ))}
 
-          {/* Panel supuestos a testear */}
-          {supuestos.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-gray-800">
-              <p className="text-xs text-gray-500 uppercase tracking-wider px-1 mb-2">
-                Supuestos a testear
-              </p>
-              <div className="space-y-1.5">
-                {supuestos.map((sup) => (
-                  <div
-                    key={sup.id}
-                    className="bg-gray-900 border border-gray-800 rounded-lg px-2.5 py-2"
-                    title={sup.enunciado}
-                  >
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <span className="text-xs opacity-60">
-                        {sup.tipo === 'deseabilidad' ? '👥' :
-                         sup.tipo === 'factibilidad' ? '⚙️' :
-                         sup.tipo === 'viabilidad' ? '💰' : '🌍'}
-                      </span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full border ${
-                        sup.nivel_riesgo === 'alto' ? 'bg-red-900/40 border-red-800 text-red-400' :
-                        sup.nivel_riesgo === 'medio' ? 'bg-yellow-900/40 border-yellow-800 text-yellow-400' :
-                        'bg-gray-800 border-gray-700 text-gray-500'
-                      }`}>
-                        {sup.nivel_riesgo}
-                      </span>
-                    </div>
-                    <p className="text-gray-400 text-xs leading-snug line-clamp-2">{sup.enunciado}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Panel de supuestos interactivo */}
+          {idea && <SupuestosPanel idea={idea} />}
         </div>
 
         {/* Panel central — Perfiles */}
         <div className="w-80 flex-shrink-0 border-r border-gray-800 overflow-y-auto p-4">
           {skActivo ? (
-            <PerfilesPanel
-              stakeholder={skActivo}
-              idea={idea}
-              sector={sector}
-              pais={pais}
-              perfilActivoIdx={perfilActivoIdx}
-              onSelectPerfil={(idx) => setPerfilActivoIdx(idx)}
-            />
+            <PerfilesPanel stakeholder={skActivo} idea={idea} sector={sector} pais={pais}
+              perfilActivoIdx={perfilActivoIdx} onSelectPerfil={idx => setPerfilActivoIdx(idx)} />
           ) : (
             <div className="flex items-center justify-center h-full">
-              <p className="text-gray-600 text-sm text-center">
-                Selecciona un stakeholder<br />para ver sus perfiles
-              </p>
+              <p className="text-gray-600 text-sm text-center">Selecciona un stakeholder<br />para ver sus perfiles</p>
             </div>
           )}
         </div>
@@ -833,22 +832,13 @@ export default function ExplorarPage() {
         {/* Panel derecho — Conversación */}
         <div className="flex-1 overflow-hidden p-4">
           {perfilSeleccionado && convKey ? (
-            <ConversacionPanel
-              perfil={perfilSeleccionado}
-              convKey={convKey}
-              idea={idea}
-            />
+            <ConversacionPanel perfil={perfilSeleccionado} convKey={convKey} idea={idea} />
           ) : (
             <div className="flex flex-col items-center justify-center h-full gap-3">
-              <div className="w-16 h-16 rounded-2xl bg-gray-800 border border-gray-700 flex items-center justify-center text-2xl">
-                💬
-              </div>
-              <p className="text-gray-400 text-sm text-center">
-                Selecciona un perfil para iniciar<br />la entrevista de exploración
-              </p>
+              <div className="w-16 h-16 rounded-2xl bg-gray-800 border border-gray-700 flex items-center justify-center text-2xl">💬</div>
+              <p className="text-gray-400 text-sm text-center">Selecciona un perfil para iniciar<br />la entrevista de exploración</p>
               <p className="text-gray-600 text-xs text-center max-w-xs">
-                Entrevista al menos 2 perfiles por segmento (4+ mensajes c/u)<br />
-                cubriendo 2 segmentos distintos para poder sintetizar
+                Entrevista al menos 2 perfiles por segmento (4+ mensajes c/u)<br />cubriendo 2 segmentos distintos para sintetizar
               </p>
             </div>
           )}

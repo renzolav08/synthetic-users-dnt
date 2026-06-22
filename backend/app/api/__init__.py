@@ -246,7 +246,8 @@ async def endpoint_conversar(conv: ConversacionInput):
         perfil=conv.perfil.model_dump(),
         idea_texto=conv.idea_texto,
         historial=[m.model_dump() for m in conv.historial],
-        pregunta=conv.pregunta
+        pregunta=conv.pregunta,
+        supuestos_activos=conv.supuestos_activos if hasattr(conv, 'supuestos_activos') else None,
     )
     return resultado
 

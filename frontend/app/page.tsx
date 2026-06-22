@@ -19,7 +19,7 @@ export default function Home() {
     explorarStore.reset()
     supuestosStore.reset()
     explorarStore.setIdea(texto, '', '')
-    router.push('/supuestos')
+    router.push('/explorar')
   }
 
   return (
