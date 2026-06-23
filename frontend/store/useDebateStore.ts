@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 
 export type Agente = {
   rol: string
@@ -69,25 +70,42 @@ interface DebateStore {
   reset: () => void
 }
 
-export const useDebateStore = create<DebateStore>((set) => ({
-  idea: '',
-  estado: 'idle',
-  contexto: null,
-  argumentos: [],
-  arbol: null,
-  error: null,
-  insights_exploracion: null,
-  sessionId: null,
-  setIdea: (idea) => set({ idea }),
-  setEstado: (estado) => set({ estado }),
-  setContexto: (contexto) => set({ contexto }),
-  addArgumento: (arg) => set((s) => ({ argumentos: [...s.argumentos, arg] })),
-  setArbol: (arbol) => set({ arbol }),
-  setError: (error) => set({ error, estado: 'error' }),
-  setInsightsExploracion: (insights) => set({ insights_exploracion: insights }),
-  setSessionId: (id) => set({ sessionId: id }),
-  reset: () => set({
-    idea: '', estado: 'idle', contexto: null,
-    argumentos: [], arbol: null, error: null, insights_exploracion: null, sessionId: null,
-  }),
-}))
+export const useDebateStore = create<DebateStore>()(
+  persist(
+    (set) => ({
+      idea: '',
+      estado: 'idle',
+      contexto: null,
+      argumentos: [],
+      arbol: null,
+      error: null,
+      insights_exploracion: null,
+      sessionId: null,
+      setIdea: (idea) => set({ idea }),
+      setEstado: (estado) => set({ estado }),
+      setContexto: (contexto) => set({ contexto }),
+      addArgumento: (arg) => set((s) => ({ argumentos: [...s.argumentos, arg] })),
+      setArbol: (arbol) => set({ arbol }),
+      setError: (error) => set({ error, estado: 'error' }),
+      setInsightsExploracion: (insights) => set({ insights_exploracion: insights }),
+      setSessionId: (id) => set({ sessionId: id }),
+      reset: () => set({
+        idea: '', estado: 'idle', contexto: null,
+        argumentos: [], arbol: null, error: null, insights_exploracion: null, sessionId: null,
+      }),
+    }),
+    {
+      name: 'debate-session',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (s) => ({
+        idea: s.idea,
+        estado: s.estado,
+        contexto: s.contexto,
+        argumentos: s.argumentos,
+        arbol: s.arbol,
+        insights_exploracion: s.insights_exploracion,
+        sessionId: s.sessionId,
+      }),
+    }
+  )
+)
