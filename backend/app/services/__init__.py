@@ -524,7 +524,8 @@ async def generar_replica_agentes(
             (a["argumento"] for a in argumentos_previos if a["agente_rol"] == perfil["rol"]),
             "Sin argumento previo"
         )
-        prompt = f"""Eres {perfil['nombre']}, {perfil['rol']} en un debate sobre esta idea de negocio:
+        nombre_agente = perfil.get('nombre') or perfil.get('rol', 'Agente')
+        prompt = f"""Eres {nombre_agente}, {perfil.get('rol', 'experto')} en un debate sobre esta idea de negocio:
 "{idea_texto}"
 
 Tu argumento anterior fue:

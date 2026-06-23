@@ -774,17 +774,17 @@ export default function ExplorarPage() {
   const convKey = skActivo && perfilActivoIdx !== null ? `${skActivo.id}::${perfilActivoIdx}` : null
 
   return (
-    <>
-      {/* Overlay de síntesis — fuera del main para evitar clipping */}
+    <div className="relative">
+      {/* Overlay de síntesis */}
       {cargandoSintesis && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(3,7,18,0.92)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, background: 'rgba(3,7,18,0.93)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
           <div style={{ position: 'relative', width: 64, height: 64 }}>
-            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '4px solid rgba(126,34,206,0.3)' }} />
-            <div className="animate-spin" style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '4px solid transparent', borderTopColor: '#a855f7' }} />
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '4px solid rgba(168,85,247,0.25)' }} />
+            <div className="animate-spin" style={{ position: 'absolute', inset: 0, borderRadius: '50%', borderTop: '4px solid #a855f7', borderRight: '4px solid transparent', borderBottom: '4px solid transparent', borderLeft: '4px solid transparent' }} />
           </div>
           <div style={{ textAlign: 'center' }}>
-            <p style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>Sintetizando exploración</p>
-            <p style={{ color: '#9ca3af', fontSize: 14, marginTop: 6 }}>Analizando conversaciones y detectando patrones...</p>
+            <p style={{ color: '#fff', fontSize: 18, fontWeight: 600, marginBottom: 6 }}>Sintetizando exploración</p>
+            <p style={{ color: '#9ca3af', fontSize: 14 }}>Analizando conversaciones y detectando patrones...</p>
           </div>
         </div>
       )}
@@ -899,6 +899,6 @@ export default function ExplorarPage() {
         </div>
       </div>
     </main>
-    </>
+    </div>
   )
 }
