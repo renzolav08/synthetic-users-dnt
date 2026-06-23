@@ -195,6 +195,27 @@ Responde UNICAMENTE con un JSON:
 
     return json.loads(response.choices[0].message.content)
 
+# Posturas deterministas por tipo de rol — garantiza consistencia en el veredicto
+def _postura_por_rol(rol: str) -> str:
+    rol_lower = rol.lower()
+    if any(k in rol_lower for k in ["riesgo", "risk"]):
+        return "Escéptico ante los riesgos: identifica amenazas críticas y exige evidencia antes de validar."
+    if any(k in rol_lower for k in ["técnico", "tecnolog", "developer", "desarrollador", "ingeniero"]):
+        return "Neutral técnico: evalúa factibilidad real, señala limitaciones concretas sin sesgo positivo ni negativo."
+    if any(k in rol_lower for k in ["negocio", "comercial", "viabilidad", "mercado"]):
+        return "Crítico comercial: cuestiona la rentabilidad y sostenibilidad del modelo antes de validar."
+    if any(k in rol_lower for k in ["usuario", "cliente", "consumidor", "comprador"]):
+        return "Usuario exigente: valora si la solución resuelve su problema real, pero desconfía de promesas sin demostrar."
+    if any(k in rol_lower for k in ["contexto", "cultura", "local", "regional"]):
+        return "Analítico contextual: evalúa si la solución encaja en el entorno local, cultural y competitivo."
+    if any(k in rol_lower for k in ["legal", "regulat", "cumplimiento", "normativa"]):
+        return "Cauteloso legal: identifica barreras regulatorias y requisitos de cumplimiento obligatorios."
+    if any(k in rol_lower for k in ["crecimiento", "escala", "expansión"]):
+        return "Neutral en escala: evalúa el potencial de crecimiento con datos concretos, sin optimismo injustificado."
+    # Por defecto: postura neutral-crítica
+    return "Neutral crítico: analiza la idea con rigor, señalando tanto fortalezas como debilidades concretas."
+
+
 # ── Nodo 3: Generación de perfiles sintéticos (protocolo Innogyzer) ───────────
 async def generar_perfil_agente(
     agente: dict,
@@ -226,6 +247,8 @@ async def generar_perfil_agente(
 - metodologia_trabajo: cómo trabaja y toma decisiones
 - fuentes_informacion: qué fuentes consulta para mantenerse actualizado
 - enfoque_problemas: cómo aborda la resolución de problemas"""
+
+    postura_fija = _postura_por_rol(agente["rol"])
 
     prompt = f"""Eres un motor de construcción de perfiles humanos sintéticos de alta fidelidad.
 
@@ -262,7 +285,7 @@ Responde ÚNICAMENTE con un JSON con esta estructura:
   ],
   "miedo_oculto": "un temor profundo que no expresa abiertamente",
   {seccion_comportamiento}
-  "postura_debate": "su postura crítica específica sobre esta idea de negocio en 1-2 oraciones",
+  "postura_debate": "{postura_fija}",
   "forma_de_hablar": {{
     "formalidad": "casual|profesional|mezclado",
     "estructura_frases": "cortas y directas|largas y elaboradas|mixto",
@@ -419,7 +442,7 @@ async def generar_argumento_agente(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=350,
-        temperature=0.4
+        temperature=0.2
     )
 
     argumento_raw = response.choices[0].message.content
