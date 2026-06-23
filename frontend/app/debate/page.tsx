@@ -153,10 +153,11 @@ export default function DebatePage() {
   const [mostrarEncuesta, setMostrarEncuesta] = useState(false)
   const [encuestaMostrada, setEncuestaMostrada] = useState(false)
   // Debate interactivo
-  const [perfilesDebate, setPerfilesDebate] = useState<Record<string, unknown>[]>([])
   const [rondas, setRondas] = useState<{ replica: string; respuestas: typeof argumentos }[]>([])
   const [textoReplica, setTextoReplica] = useState('')
   const [enviandoReplica, setEnviandoReplica] = useState(false)
+  // fase: 'debatiendo' | 'preguntando' | 'interviniendo' | 'finalizado'
+  const [faseInteraccion, setFaseInteraccion] = useState<'debatiendo' | 'preguntando' | 'interviniendo' | 'finalizado'>('debatiendo')
 
   useEffect(() => {
     if (!idea) { router.replace('/'); return }
@@ -208,15 +209,10 @@ export default function DebatePage() {
             else if (tipo === 'datos_web') { setEstado('generando_perfiles') }
             else if (tipo === 'perfiles_listos') {
               setEstado('debatiendo')
-              if (parsed.perfiles) setPerfilesDebate(parsed.perfiles)
             }
             else if (tipo === 'argumento') { addArgumento(data) }
-            else if (tipo === 'consenso')  {
-              // Guardamos el árbol pero no lo mostramos aún — el usuario puede replicar primero
-              setArbol(data)
-              setEstado('consenso')
-            }
-            else if (tipo === 'fin')       { setEstado('completado') }
+            else if (tipo === 'consenso')  { setArbol(data); setEstado('consenso') }
+            else if (tipo === 'fin')       { setEstado('completado'); setFaseInteraccion('preguntando') }
           } catch {}
         }
       }
@@ -285,6 +281,7 @@ export default function DebatePage() {
       }
     } finally {
       setEnviandoReplica(false)
+      setFaseInteraccion('preguntando')
     }
   }
 
@@ -558,18 +555,42 @@ export default function DebatePage() {
           </div>
         ))}
 
-        {/* Input de réplica — aparece cuando el debate inicial terminó */}
-        {estado === 'completado' && (
+        {/* ── Fase interacción post-debate ─────────────────────────────────── */}
+
+        {/* Pregunta al usuario si desea intervenir */}
+        {faseInteraccion === 'preguntando' && (
+          <div className="bg-gray-900 border border-blue-800 rounded-xl p-5 space-y-3">
+            <p className="text-white text-sm font-medium">El debate ha concluido. ¿Deseas intervenir con una réplica o nueva perspectiva?</p>
+            <p className="text-gray-500 text-xs">Los agentes responderán directamente a tu punto de vista antes de mostrar los resultados finales.</p>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setFaseInteraccion('interviniendo')}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2.5 rounded-xl transition"
+              >
+                Sí, quiero intervenir
+              </button>
+              <button
+                onClick={() => setFaseInteraccion('finalizado')}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2.5 rounded-xl transition"
+              >
+                No, ver resultados
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Input de réplica */}
+        {faseInteraccion === 'interviniendo' && (
           <div className="bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-3">
-            <p className="text-sm text-gray-300 font-medium">¿Tienes alguna réplica o nueva perspectiva?</p>
-            <p className="text-xs text-gray-500">Los agentes responderán en tiempo real a tu punto de vista.</p>
+            <p className="text-sm text-gray-300 font-medium">Tu réplica</p>
             <div className="flex gap-2">
               <textarea
                 value={textoReplica}
                 onChange={e => setTextoReplica(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarReplica() } }}
                 disabled={enviandoReplica}
-                placeholder="Ej: ¿Qué pasa si el primer mes es gratuito para los repartidores? ¿Cambia la viabilidad?"
+                autoFocus
+                placeholder="Ej: ¿Qué pasa si el primer mes es gratuito? ¿Cambia la viabilidad del modelo?"
                 rows={3}
                 className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-white placeholder-gray-500 text-sm resize-none focus:outline-none focus:border-blue-600 transition disabled:opacity-50"
               />
@@ -578,23 +599,27 @@ export default function DebatePage() {
                 disabled={!textoReplica.trim() || enviandoReplica}
                 className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 rounded-xl transition text-sm font-medium self-end py-2.5"
               >
-                {enviandoReplica ? '...' : '→'}
+                {enviandoReplica ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  </span>
+                ) : '→'}
               </button>
             </div>
           </div>
         )}
 
-        {/* Separador visual hacia el consenso */}
-        {estado === 'completado' && arbol && rondas.length > 0 && (
+        {/* Separador y árbol — solo cuando el usuario eligió finalizar */}
+        {faseInteraccion === 'finalizado' && arbol && (
           <div className="flex items-center gap-3">
             <div className="flex-1 h-px bg-gray-800" />
-            <span className="text-xs text-gray-500">Consenso final</span>
+            <span className="text-xs text-gray-500">Resultados finales</span>
             <div className="flex-1 h-px bg-gray-800" />
           </div>
         )}
 
-        {/* Árbol de argumentos */}
-        {arbol && (
+        {/* Árbol de argumentos — solo visible tras finalizar */}
+        {faseInteraccion === 'finalizado' && arbol && (
           <div className="space-y-5">
             <h2 className="text-lg font-semibold text-white">Árbol de argumentos</h2>
 
