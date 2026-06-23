@@ -11,15 +11,34 @@ const PAISES = [
   'Bolivia', 'Venezuela', 'Uruguay', 'Paraguay', 'España',
 ]
 
+// Mapeo de código ISO → nombre en español usado en el sistema
+const PAIS_POR_CODIGO: Record<string, string> = {
+  PE: 'Perú', MX: 'México', CO: 'Colombia', AR: 'Argentina',
+  CL: 'Chile', EC: 'Ecuador', BO: 'Bolivia', VE: 'Venezuela',
+  UY: 'Uruguay', PY: 'Paraguay', ES: 'España',
+}
+
 export default function Home() {
   const [texto, setTexto] = useState('')
   const [pais, setPais] = useState('Perú')
+  const [detectandoPais, setDetectandoPais] = useState(true)
   const { estado } = useDebateStore()
   const explorarStore = useExplorarStore()
   const supuestosStore = useSupuestosStore()
   const router = useRouter()
   const cargando = estado !== 'idle' && estado !== 'error'
   const sesionGuardada = explorarStore.idea && explorarStore.stakeholders && explorarStore.stakeholders.length > 0
+
+  useEffect(() => {
+    fetch('https://ipapi.co/json/')
+      .then(r => r.json())
+      .then(data => {
+        const detected = PAIS_POR_CODIGO[data.country_code]
+        if (detected) setPais(detected)
+      })
+      .catch(() => {})
+      .finally(() => setDetectandoPais(false))
+  }, [])
 
   function explorarPrimero() {
     if (!texto.trim() || texto.trim().length < 20) return
@@ -80,11 +99,15 @@ export default function Home() {
 
         {/* Selector de país */}
         <div className="flex items-center gap-2 mt-3 mb-1">
-          <label className="text-xs text-gray-500 flex-shrink-0">País de operación</label>
+          <label className="text-xs text-gray-500 flex-shrink-0">
+            País de operación
+            {detectandoPais && <span className="ml-1 text-gray-600">· detectando...</span>}
+          </label>
           <select
             value={pais}
             onChange={e => setPais(e.target.value)}
-            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-600 transition"
+            disabled={detectandoPais}
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-600 transition disabled:opacity-50"
           >
             {PAISES.map(p => (
               <option key={p} value={p}>{p}</option>
