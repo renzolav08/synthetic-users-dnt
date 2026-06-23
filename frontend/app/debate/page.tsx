@@ -574,23 +574,28 @@ export default function DebatePage() {
 
         {/* Pregunta al usuario si desea intervenir */}
         {faseInteraccion === 'preguntando' && (
-          <div className="bg-gray-900 border border-blue-800 rounded-xl p-5 space-y-3">
-            <p className="text-white text-sm font-medium">El debate ha concluido. ¿Deseas intervenir con una réplica o nueva perspectiva?</p>
-            <p className="text-gray-500 text-xs">Los agentes responderán directamente a tu punto de vista antes de mostrar los resultados finales.</p>
-            <div className="flex gap-3 pt-1">
-              <button
-                onClick={() => setFaseInteraccion('interviniendo')}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2.5 rounded-xl transition"
-              >
-                Sí, quiero intervenir
-              </button>
-              <button
-                onClick={() => setFaseInteraccion('finalizado')}
-                className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2.5 rounded-xl transition"
-              >
-                No, ver resultados
-              </button>
+          <div className="bg-gray-900 border border-blue-800/60 rounded-xl p-5 space-y-4">
+            <div>
+              <p className="text-white text-sm font-medium">¿Tienes alguna réplica o nueva perspectiva?</p>
+              <p className="text-gray-500 text-xs mt-1">Los agentes responderán en tiempo real a tu punto de vista.</p>
             </div>
+            <button
+              onClick={() => setFaseInteraccion('interviniendo')}
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2.5 rounded-xl transition"
+            >
+              Sí, quiero intervenir
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-gray-800" />
+              <span className="text-xs text-gray-600">o</span>
+              <div className="flex-1 h-px bg-gray-800" />
+            </div>
+            <button
+              onClick={() => setFaseInteraccion('finalizado')}
+              className="w-full bg-purple-700 hover:bg-purple-600 text-white text-sm font-semibold py-3 rounded-xl transition"
+            >
+              Generar Consenso Final →
+            </button>
           </div>
         )}
 
@@ -624,11 +629,11 @@ export default function DebatePage() {
           </div>
         )}
 
-        {/* Separador y árbol — solo cuando el usuario eligió finalizar */}
+        {/* Separador y árbol — solo cuando el usuario generó el consenso */}
         {faseInteraccion === 'finalizado' && arbol && (
           <div className="flex items-center gap-3">
             <div className="flex-1 h-px bg-gray-800" />
-            <span className="text-xs text-gray-500">Resultados finales</span>
+            <span className="text-xs text-gray-500">Consenso final</span>
             <div className="flex-1 h-px bg-gray-800" />
           </div>
         )}
