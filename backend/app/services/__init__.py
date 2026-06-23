@@ -785,6 +785,9 @@ async def generar_perfiles_stakeholder(
     """
     prompt = f"""Eres un motor de construcción de perfiles humanos sintéticos de alta fidelidad.
 
+*** PAÍS OBLIGATORIO: {pais} ***
+TODOS los perfiles deben ser personas que viven en {pais}. Sus nombres, ciudades, referencias culturales y contexto deben ser 100% de {pais}. NUNCA uses nombres anglosajones ni ciudades de otros países.
+
 IDEA DEL EMPRENDEDOR:
 {idea_texto}
 
@@ -794,7 +797,7 @@ Tipo: {stakeholder.tipo}
 
 CONTEXTO DEL MERCADO:
 - Sector: {sector}
-- País: {pais}
+- País: {pais} (OBLIGATORIO — todos los perfiles son de {pais})
 - Tendencias: {datos_web.get("tendencias_sector", "no disponible")}
 - Comportamiento real: {datos_web.get("comportamiento_usuario", "no disponible")}
 - Barreras reales: {", ".join(datos_web.get("barreras_reales", []))}
