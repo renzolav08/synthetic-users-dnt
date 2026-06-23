@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useDebateStore } from '@/store/useDebateStore'
 import { useExplorarStore } from '@/store/useExplorarStore'
+import { useHistorialStore } from '@/store/useHistorialStore'
 
 const COLORES_ROL: Record<string, string> = {
   'Usuario Objetivo':    'border-purple-500 bg-purple-950/30',
@@ -146,6 +147,7 @@ export default function DebatePage() {
     sessionId, setEstado, setContexto, addArgumento, setArbol, setError, setSessionId,
   } = useDebateStore()
   const { pais: paisExploracion } = useExplorarStore()
+  const { agregar: agregarHistorial } = useHistorialStore()
 
   // HU-003: panel de contexto colapsable
   const [mostrarContexto, setMostrarContexto] = useState(false)
@@ -212,7 +214,21 @@ export default function DebatePage() {
               setEstado('debatiendo')
             }
             else if (tipo === 'argumento') { addArgumento(data) }
-            else if (tipo === 'consenso')  { setArbol(data); setEstado('consenso') }
+            else if (tipo === 'consenso')  {
+              setArbol(data)
+              setEstado('consenso')
+              // Guardar en historial local
+              if (idea && data.recomendacion) {
+                agregarHistorial({
+                  session_id: parsed.session_id ?? crypto.randomUUID(),
+                  idea_texto: idea,
+                  recomendacion: data.recomendacion,
+                  nivel_confianza: data.nivel_confianza ?? 0,
+                  resumen_ejecutivo: data.resumen_ejecutivo ?? '',
+                  fecha: new Date().toISOString(),
+                })
+              }
+            }
             else if (tipo === 'fin')       { setEstado('completado'); setFaseInteraccion('preguntando') }
           } catch {}
         }
