@@ -416,31 +416,29 @@ async def endpoint_tokens(session_id: str):
 async def endpoint_replica(body: ReplicaInput):
     """
     SSE stream: el usuario envía una réplica durante el debate.
-    Cada agente responde en tiempo real a lo que dijo el usuario.
+    Cada agente responde secuencialmente con streaming real.
     """
     async def generar():
-        contexto = ContextoDetectado(**body.contexto)
-        tareas = [
-            _respuesta_individual(perfil, body)
-            for perfil in body.perfiles
-        ]
-        for coro in asyncio.as_completed(tareas):
-            respuesta = await coro
-            yield f"data: {json.dumps({'tipo': 'replica_agente', 'data': respuesta})}\n\n"
+        try:
+            ctx = ContextoDetectado(**body.contexto)
+            # Responder un agente a la vez para streaming real
+            for perfil in body.perfiles:
+                try:
+                    resultados = await generar_replica_agentes(
+                        perfiles=[perfil],
+                        idea_texto=body.idea_texto,
+                        contexto=ctx,
+                        replica_usuario=body.replica_usuario,
+                        argumentos_previos=body.argumentos_previos,
+                        session_id=body.session_id,
+                    )
+                    if resultados:
+                        yield f"data: {json.dumps({'tipo': 'replica_agente', 'data': resultados[0]})}\n\n"
+                except Exception as e:
+                    yield f"data: {json.dumps({'tipo': 'replica_agente', 'data': {'agente_rol': perfil.get('rol','Agente'), 'argumento': f'[No pudo responder: {str(e)[:60]}]', 'posicion': 'neutral', 'agente_peso': perfil.get('peso', 0.2)}})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'tipo': 'error', 'mensaje': str(e)})}\n\n"
         yield f"data: {json.dumps({'tipo': 'fin_replica'})}\n\n"
-
-    async def _respuesta_individual(perfil: dict, b: ReplicaInput):
-        from app.schemas import ContextoDetectado as CD
-        ctx = CD(**b.contexto)
-        resultados = await generar_replica_agentes(
-            perfiles=[perfil],
-            idea_texto=b.idea_texto,
-            contexto=ctx,
-            replica_usuario=b.replica_usuario,
-            argumentos_previos=b.argumentos_previos,
-            session_id=b.session_id,
-        )
-        return resultados[0] if resultados else {}
 
     return StreamingResponse(
         generar(),

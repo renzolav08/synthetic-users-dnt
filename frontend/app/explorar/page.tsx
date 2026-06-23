@@ -774,21 +774,22 @@ export default function ExplorarPage() {
   const convKey = skActivo && perfilActivoIdx !== null ? `${skActivo.id}::${perfilActivoIdx}` : null
 
   return (
-    <main className="h-[calc(100vh-120px)] flex flex-col">
-
-      {/* Overlay de síntesis */}
+    <>
+      {/* Overlay de síntesis — fuera del main para evitar clipping */}
       {cargandoSintesis && (
-        <div className="fixed inset-0 z-50 bg-gray-950/90 backdrop-blur flex flex-col items-center justify-center gap-5">
-          <div className="relative w-16 h-16">
-            <div className="absolute inset-0 border-4 border-purple-700/30 rounded-full" />
-            <div className="absolute inset-0 border-4 border-t-purple-500 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" />
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(3,7,18,0.92)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
+          <div style={{ position: 'relative', width: 64, height: 64 }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '4px solid rgba(126,34,206,0.3)' }} />
+            <div className="animate-spin" style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '4px solid transparent', borderTopColor: '#a855f7' }} />
           </div>
-          <div className="text-center">
-            <p className="text-white text-lg font-semibold">Sintetizando exploración</p>
-            <p className="text-gray-400 text-sm mt-1">Analizando conversaciones y detectando patrones...</p>
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>Sintetizando exploración</p>
+            <p style={{ color: '#9ca3af', fontSize: 14, marginTop: 6 }}>Analizando conversaciones y detectando patrones...</p>
           </div>
         </div>
       )}
+
+    <main className="h-[calc(100vh-120px)] flex flex-col">
 
       {/* Barra superior */}
       <div className="border-b border-gray-800 bg-gray-900/80 backdrop-blur px-4 py-3 flex items-center justify-between flex-shrink-0">
@@ -898,5 +899,6 @@ export default function ExplorarPage() {
         </div>
       </div>
     </main>
+    </>
   )
 }
