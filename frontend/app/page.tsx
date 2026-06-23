@@ -19,6 +19,7 @@ export default function Home() {
   const supuestosStore = useSupuestosStore()
   const router = useRouter()
   const cargando = estado !== 'idle' && estado !== 'error'
+  const sesionGuardada = explorarStore.idea && explorarStore.stakeholders && explorarStore.stakeholders.length > 0
 
   function explorarPrimero() {
     if (!texto.trim() || texto.trim().length < 20) return
@@ -48,6 +49,21 @@ export default function Home() {
 
       {/* Card principal */}
       <div className="w-full max-w-2xl bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-2xl">
+
+        {sesionGuardada && (
+          <div className="mb-4 flex items-center justify-between bg-blue-950 border border-blue-800 rounded-xl px-4 py-3">
+            <div>
+              <p className="text-blue-300 text-sm font-medium">Sesión guardada</p>
+              <p className="text-blue-400 text-xs mt-0.5 truncate max-w-xs">{explorarStore.idea?.slice(0, 70)}...</p>
+            </div>
+            <button
+              onClick={() => router.push('/explorar')}
+              className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition flex-shrink-0 ml-3"
+            >
+              Continuar →
+            </button>
+          </div>
+        )}
 
         <label className="block text-sm text-gray-400 mb-2">
           Cuéntanos tu idea de negocio

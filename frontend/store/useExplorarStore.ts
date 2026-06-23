@@ -210,7 +210,7 @@ export const useExplorarStore = create<ExplorarStore>()(
     }),
     {
       name: 'explorar-session',
-      storage: createJSONStorage(() => sessionStorage),
+      storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         idea: s.idea,
         sector: s.sector,

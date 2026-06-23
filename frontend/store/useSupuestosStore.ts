@@ -93,7 +93,7 @@ export const useSupuestosStore = create<SupuestosStore>()(
     }),
     {
       name: 'supuestos-session',
-      storage: createJSONStorage(() => sessionStorage),
+      storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         supuestos: s.supuestos,
         razonamiento: s.razonamiento,
