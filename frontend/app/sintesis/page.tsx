@@ -41,7 +41,7 @@ const LABEL_VEREDICTO: Record<string, string> = {
 export default function SintesisPage() {
   const router = useRouter()
   const { idea, sintesis, cargandoSintesis, errorSintesis } = useExplorarStore()
-  const { setIdea, setInsightsExploracion, reset: resetDebate } = useDebateStore()
+  const { idea: ideaDebate, estado: estadoDebate, setIdea, setInsightsExploracion, reset: resetDebate } = useDebateStore()
 
   // Redirigir si no hay sesión activa
   useEffect(() => {
@@ -50,9 +50,11 @@ export default function SintesisPage() {
 
   function irAlDebate() {
     if (!sintesis) return
-    resetDebate()
+    // Solo resetear si la idea cambió — preservar debate cacheado de la misma idea
+    if (ideaDebate !== idea || estadoDebate === 'idle' || estadoDebate === 'error') {
+      resetDebate()
+    }
     setIdea(idea)
-    // Pasar la síntesis como contexto para el debate
     setInsightsExploracion(sintesis as unknown as Record<string, unknown>)
     router.push('/debate')
   }

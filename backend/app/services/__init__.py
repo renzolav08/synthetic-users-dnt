@@ -58,7 +58,14 @@ tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 
 # ── Nodo 1: Detección de contexto ────────────────────────────────────────────
+_contexto_cache: dict[str, tuple[ContextoDetectado, float]] = {}
+
 async def detectar_contexto(idea_texto: str, pais_sugerido: str | None = None) -> ContextoDetectado:
+    cache_key = hashlib.md5(f"{idea_texto}|{pais_sugerido or ''}".encode()).hexdigest()
+    cached = _contexto_cache.get(cache_key)
+    if cached and (time.time() - cached[1]) < _CACHE_TTL:
+        return cached[0]
+
     pais_instruccion = (
         f'IMPORTANTE: El emprendedor opera en {pais_sugerido}. Usa "{pais_sugerido}" como país, '
         f'genera perfiles y contexto cultural específico para ese país.'
@@ -120,7 +127,9 @@ REGLAS PARA LOS AGENTES (genera entre 5 y 7):
     )
 
     data = json.loads(response.choices[0].message.content)
-    return ContextoDetectado(**data)
+    resultado = ContextoDetectado(**data)
+    _contexto_cache[cache_key] = (resultado, time.time())
+    return resultado
 
 
 # ── Nodo 2: Búsqueda web con Tavily ──────────────────────────────────────────
