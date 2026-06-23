@@ -812,7 +812,7 @@ Responde ÚNICAMENTE con un JSON:
       "variante_descripcion": "qué hace ÚNICO a este perfil respecto a los otros (ej: padre joven con recursos limitados)",
       "nombre": "nombre completo creíble para {pais}",
       "edad": número entero,
-      "ubicacion": "ciudad, {pais}",
+      "ubicacion": "nombre de una ciudad real de {pais} (ej: Lima, Arequipa, Trujillo)",
       "ocupacion": "ocupación específica",
       "autopercepcion": "cómo se ve a sí mismo en 1-2 oraciones",
       "creencias_centrales": ["creencia 1", "creencia 2", "creencia 3"],
@@ -834,9 +834,12 @@ Responde ÚNICAMENTE con un JSON:
   ]
 }}
 
-IMPORTANTE: Los perfiles deben ser REALMENTE distintos entre sí — no variaciones superficiales.
-Fundamenta cada perfil en los datos reales del mercado.
-NO incluyas texto fuera del JSON."""
+IMPORTANTE:
+- Los perfiles deben ser REALMENTE distintos entre sí — no variaciones superficiales.
+- El campo "ubicacion" DEBE ser una ciudad real de {pais} (ej: Lima, Arequipa, Trujillo, Cusco). NUNCA escribas "ciudad, no especificado" ni dejes el campo vacío.
+- El campo "nombre" debe ser un nombre propio típico de {pais}.
+- Fundamenta cada perfil en los datos reales del mercado.
+- NO incluyas texto fuera del JSON."""
 
     response = await client.chat.completions.create(
         model="gpt-4o",
