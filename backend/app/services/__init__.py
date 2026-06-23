@@ -282,7 +282,7 @@ DATOS REALES DEL MERCADO (fundamenta el perfil en esto):
 
 Responde ÚNICAMENTE con un JSON con esta estructura:
 {{
-  "nombre": "nombre completo creíble y apropiado para {contexto.pais}",
+  "nombre": "nombre completo de UNA sola persona (sin 'y', sin 'e', sin parejas), apropiado para {contexto.pais}",
   "edad": número entero entre 25 y 55,
   "ubicacion": "ciudad, {contexto.pais}",
   "ocupacion": "ocupación específica y detallada relacionada con el sector",
@@ -864,7 +864,7 @@ Responde ÚNICAMENTE con un JSON:
   "perfiles": [
     {{
       "variante_descripcion": "qué hace ÚNICO a este perfil respecto a los otros (ej: padre joven con recursos limitados)",
-      "nombre": "nombre completo creíble para {pais}",
+      "nombre": "nombre completo de UNA sola persona (sin 'y', sin parejas), apropiado para {pais}",
       "edad": número entero,
       "ubicacion": "nombre de una ciudad real de {pais} (ej: Lima, Arequipa, Trujillo)",
       "ocupacion": "ocupación específica",

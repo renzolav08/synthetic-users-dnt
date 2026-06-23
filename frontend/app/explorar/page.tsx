@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useExplorarStore, type PerfilSintetico, type Stakeholder, type InsightsJTBD } from '@/store/useExplorarStore'
 import { useSupuestosStore, type Supuesto } from '@/store/useSupuestosStore'
@@ -773,10 +774,12 @@ export default function ExplorarPage() {
   const perfilSeleccionado = perfilActivoIdx !== null ? perfilesActivos[perfilActivoIdx] : null
   const convKey = skActivo && perfilActivoIdx !== null ? `${skActivo.id}::${perfilActivoIdx}` : null
 
+  const overlayEl = typeof document !== 'undefined' ? document.body : null
+
   return (
     <div className="relative">
-      {/* Overlay de síntesis */}
-      {cargandoSintesis && (
+      {/* Overlay de síntesis — montado en document.body via portal para escapar overflow:hidden del layout */}
+      {cargandoSintesis && overlayEl && createPortal(
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, background: 'rgba(3,7,18,0.93)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
           <div style={{ position: 'relative', width: 64, height: 64 }}>
             <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '4px solid rgba(168,85,247,0.25)' }} />
@@ -786,7 +789,8 @@ export default function ExplorarPage() {
             <p style={{ color: '#fff', fontSize: 18, fontWeight: 600, marginBottom: 6 }}>Sintetizando exploración</p>
             <p style={{ color: '#9ca3af', fontSize: 14 }}>Analizando conversaciones y detectando patrones...</p>
           </div>
-        </div>
+        </div>,
+        overlayEl
       )}
 
     <main className="h-[calc(100vh-120px)] flex flex-col">
