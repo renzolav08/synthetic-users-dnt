@@ -254,6 +254,7 @@ export default function DebatePage() {
           session_id: sessionId,
         }),
       })
+      if (!res.ok) { console.error('Error replica:', res.status, await res.text()); return }
       if (!res.body) return
       const reader = res.body.getReader()
       const decoder = new TextDecoder()

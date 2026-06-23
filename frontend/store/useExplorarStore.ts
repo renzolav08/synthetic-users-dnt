@@ -209,7 +209,7 @@ export const useExplorarStore = create<ExplorarStore>()(
   reset: () => set(inicial),
     }),
     {
-      name: 'explorar-session',
+      name: 'explorar-session-v2',
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         idea: s.idea,

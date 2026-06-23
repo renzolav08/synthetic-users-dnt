@@ -95,7 +95,7 @@ export const useDebateStore = create<DebateStore>()(
       }),
     }),
     {
-      name: 'debate-session',
+      name: 'debate-session-v2',
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         idea: s.idea,

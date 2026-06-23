@@ -92,7 +92,7 @@ export const useSupuestosStore = create<SupuestosStore>()(
         set({ supuestos: [], razonamiento: '', cargando: false, error: null, activosIds: [], evidencia: {} }),
     }),
     {
-      name: 'supuestos-session',
+      name: 'supuestos-session-v2',
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         supuestos: s.supuestos,
