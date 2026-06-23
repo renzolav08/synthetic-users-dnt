@@ -419,7 +419,7 @@ async def generar_argumento_agente(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=350,
-        temperature=0.85
+        temperature=0.4
     )
 
     argumento_raw = response.choices[0].message.content
@@ -594,20 +594,38 @@ async def generar_consenso(
             f"Argumento: {arg['argumento']}\n"
         )
 
+    # Calcular score ponderado matemáticamente antes de llamar al LLM
+    score_ponderado = 0.0
+    peso_total = 0.0
+    for arg in argumentos:
+        peso = arg.get("agente_peso", 0.2)
+        posicion = arg.get("posicion", "neutral")
+        valor = 1.0 if posicion == "pro" else (0.0 if posicion == "contra" else 0.5)
+        score_ponderado += peso * valor
+        peso_total += peso
+    if peso_total > 0:
+        score_ponderado /= peso_total
+    score_ponderado = round(score_ponderado, 3)
+
+    # Veredicto determinista según umbrales fijos
+    if score_ponderado >= 0.65:
+        veredicto_calculado = "viable"
+    elif score_ponderado >= 0.40:
+        veredicto_calculado = "condicionalmente_viable"
+    else:
+        veredicto_calculado = "no_viable"
+
     prompt = (
         "Eres un sintetizador experto de debates de evaluación de ideas de negocio.\n\n"
         f"IDEA EVALUADA:\n{idea_texto}\n\n"
         f"DEBATE ENTRE AGENTES ESPECIALIZADOS:\n{resumen_debate}\n\n"
-        "Analiza el debate y genera el árbol de argumentos estructurado.\n"
-        "Ten en cuenta el PESO de cada agente al calcular el consenso "
-        "(mayor peso = mayor influencia en la recomendación).\n\n"
-        "Para nivel_confianza usa estos criterios ESTRICTOS:\n"
-        "- 0.85–1.00: mayoría clara de agentes alineados, pocos riesgos críticos, evidencia sólida\n"
-        "- 0.65–0.84: acuerdo moderado, algunos riesgos importantes pero manejables\n"
-        "- 0.45–0.64: posiciones muy divididas, riesgos significativos sin resolver\n"
-        "- 0.20–0.44: mayoría en contra o riesgos críticos que comprometen la viabilidad\n"
-        "Calcula el nivel_confianza a partir de: % de agentes pro vs contra ponderado por sus pesos, "
-        "cantidad de divergencias vs acuerdos, y gravedad de los riesgos mencionados.\n\n"
+        f"SCORE PONDERADO CALCULADO (fórmula: suma(peso × valor_posicion) / suma_pesos, donde pro=1.0, neutral=0.5, contra=0.0): {score_ponderado}\n"
+        f"VEREDICTO OBLIGATORIO (derivado del score — NO lo cambies): '{veredicto_calculado}'\n"
+        f"  - score >= 0.65 → viable | 0.40–0.64 → condicionalmente_viable | < 0.40 → no_viable\n\n"
+        "INSTRUCCIÓN: El campo 'recomendacion' DEBE ser exactamente el veredicto indicado arriba. "
+        "El campo 'nivel_confianza' DEBE ser exactamente el score ponderado indicado arriba. "
+        "Tu tarea es generar el análisis cualitativo (acuerdos, divergencias, fortalezas, debilidades, condiciones) "
+        "que justifique ese veredicto con base en los argumentos del debate.\n\n"
         "Responde ÚNICAMENTE con un JSON con esta estructura:\n"
         "{\n"
         '  "acuerdos": [\n'
@@ -616,12 +634,12 @@ async def generar_consenso(
         '  "divergencias": [\n'
         '    {"punto": "descripción del desacuerdo", "agente_a": "rol1", "agente_b": "rol2"}\n'
         "  ],\n"
-        '  "fortalezas_idea": ["fortaleza 1", "fortaleza 2"],\n'
-        '  "debilidades_idea": ["debilidad 1", "debilidad 2"],\n'
-        '  "recomendacion": "viable|no_viable|condicionalmente_viable",\n'
-        '  "nivel_confianza": <número real entre 0.0 y 1.0 basado en el análisis>,\n'
-        '  "condiciones": ["condición 1 si es condicionalmente viable", "condición 2"],\n'
-        '  "resumen_ejecutivo": "resumen del debate en 2-3 oraciones para el emprendedor"\n'
+        '  "fortalezas_idea": ["fortaleza específica 1", "fortaleza específica 2"],\n'
+        '  "debilidades_idea": ["debilidad específica 1", "debilidad específica 2"],\n'
+        f'  "recomendacion": "{veredicto_calculado}",\n'
+        f'  "nivel_confianza": {score_ponderado},\n'
+        '  "condiciones": ["condición concreta 1", "condición concreta 2"],\n'
+        '  "resumen_ejecutivo": "resumen crítico del debate en 2-3 oraciones para el emprendedor"\n'
         "}"
     )
 
