@@ -195,43 +195,49 @@ export default function DebatePage() {
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      // Timeout de 120s — si el stream se congela, mostrar error con reintento
+      const timeoutId = setTimeout(() => {
+        reader.cancel()
+        setError('El debate tardó demasiado. Verifica tu conexión e intenta de nuevo.')
+      }, 120_000)
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const parsed = JSON.parse(line.slice(6))
-            const { tipo, data } = parsed
-            if (tipo === 'session_id')     { setSessionId(parsed.session_id) }
-            else if (tipo === 'contexto')  { setContexto(data); setEstado('buscando_web') }
-            else if (tipo === 'datos_web') { setEstado('generando_perfiles') }
-            else if (tipo === 'perfiles_listos') {
-              setEstado('debatiendo')
-            }
-            else if (tipo === 'argumento') { addArgumento(data) }
-            else if (tipo === 'consenso')  {
-              setArbol(data)
-              setEstado('consenso')
-              // Guardar en historial local
-              if (idea && data.recomendacion) {
-                agregarHistorial({
-                  session_id: parsed.session_id ?? crypto.randomUUID(),
-                  idea_texto: idea,
-                  recomendacion: data.recomendacion,
-                  nivel_confianza: data.nivel_confianza ?? 0,
-                  resumen_ejecutivo: data.resumen_ejecutivo ?? '',
-                  fecha: new Date().toISOString(),
-                })
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            try {
+              const parsed = JSON.parse(line.slice(6))
+              const { tipo, data } = parsed
+              if (tipo === 'session_id')     { setSessionId(parsed.session_id) }
+              else if (tipo === 'contexto')  { setContexto(data); setEstado('buscando_web') }
+              else if (tipo === 'datos_web') { setEstado('generando_perfiles') }
+              else if (tipo === 'perfiles_listos') { setEstado('debatiendo') }
+              else if (tipo === 'argumento') { addArgumento(data) }
+              else if (tipo === 'consenso')  {
+                setArbol(data)
+                setEstado('consenso')
+                if (idea && data.recomendacion) {
+                  agregarHistorial({
+                    session_id: parsed.session_id ?? crypto.randomUUID(),
+                    idea_texto: idea,
+                    recomendacion: data.recomendacion,
+                    nivel_confianza: data.nivel_confianza ?? 0,
+                    resumen_ejecutivo: data.resumen_ejecutivo ?? '',
+                    fecha: new Date().toISOString(),
+                  })
+                }
               }
-            }
-            else if (tipo === 'fin')       { setEstado('completado'); setFaseInteraccion('preguntando') }
-          } catch {}
+              else if (tipo === 'fin') { setEstado('completado'); setFaseInteraccion('preguntando') }
+            } catch {}
+          }
         }
+      } finally {
+        clearTimeout(timeoutId)
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Error inesperado'
@@ -270,8 +276,11 @@ export default function DebatePage() {
           session_id: sessionId,
         }),
       })
-      if (!res.ok) { console.error('Error replica:', res.status, await res.text()); return }
-      if (!res.body) return
+      if (!res.ok) {
+        setRondas(prev => prev.map((r, i) => i === rondaIdx ? { ...r, respuestas: [{ agente_rol: 'Sistema', agente_nombre: '', agente_categoria: 'E', agente_peso: 0, argumento: 'No se pudo procesar la réplica. Intenta de nuevo.', posicion: 'neutral', es_replica: true }] } : r))
+        setEnviandoReplica(false); setFaseInteraccion('preguntando'); return
+      }
+      if (!res.body) { setEnviandoReplica(false); setFaseInteraccion('preguntando'); return }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
@@ -501,7 +510,7 @@ export default function DebatePage() {
                       <span className={`text-xs font-medium ${COLOR_POSICION[arg.posicion] || 'text-gray-400'}`}>
                         {ICONO_POSICION[arg.posicion] || '○'} {arg.posicion}
                       </span>
-                      <span className="text-xs text-gray-600">
+                      <span className="text-xs text-gray-600" title="Influencia de este agente en el veredicto final">
                         peso {((arg.agente_peso ?? 0) * 100).toFixed(0)}%
                       </span>
                     </div>
@@ -652,8 +661,11 @@ export default function DebatePage() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs opacity-70 mb-1">Nivel de confianza</p>
+                  <p className="text-xs opacity-70 mb-1" title="Porcentaje de agentes que votaron a favor, ponderado por su peso de relevancia">
+                    Nivel de confianza ⓘ
+                  </p>
                   <p className="text-2xl font-bold">{(arbol.nivel_confianza * 100).toFixed(0)}%</p>
+                  <p className="text-xs opacity-50 mt-0.5">≥65% viable · 40-64% condicional · &lt;40% no viable</p>
                 </div>
               </div>
               {arbol.resumen_ejecutivo && (
@@ -750,7 +762,27 @@ export default function DebatePage() {
           </div>
         )}
 
-        {cargando && argumentos.length === 0 && (
+        {estado === 'error' && (
+          <div className="text-center py-20 space-y-4">
+            <p className="text-red-400 text-sm px-4">{useDebateStore.getState().error || 'Ocurrió un error inesperado. Verifica tu conexión.'}</p>
+            <div className="flex justify-center gap-3">
+              <button
+                onClick={() => { setEstado('idle'); iniciarDebate() }}
+                className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition"
+              >
+                Reintentar
+              </button>
+              <button
+                onClick={() => { reset(); router.push('/') }}
+                className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm px-6 py-2.5 rounded-xl transition"
+              >
+                Volver al inicio
+              </button>
+            </div>
+          </div>
+        )}
+
+        {cargando && estado !== 'error' && argumentos.length === 0 && (
           <div className="text-center py-20">
             <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
             <p className="text-gray-400 text-sm">{ESTADOS_LABEL[estado] || 'Iniciando...'}</p>

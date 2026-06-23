@@ -24,6 +24,11 @@ import uuid
 router = APIRouter()
 
 
+@router.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 @router.post("/analizar-contexto", response_model=ContextoDetectado)
 async def analizar_contexto(idea: IdeaInput):
     """Nodo 1: detecta el contexto de la idea."""

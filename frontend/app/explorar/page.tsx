@@ -253,18 +253,20 @@ function PerfilesPanel({
 
   const [generandoMas, setGenerandoMas] = useState(false)
   const [errorMas, setErrorMas] = useState<string | null>(null)
+  const [errorPerfiles, setErrorPerfiles] = useState<string | null>(null)
 
   useEffect(() => {
     if (perfiles.length > 0 || cargando) return
+    setErrorPerfiles(null)
     setCargandoPerfilesPor(stakeholder.id, true)
     fetch(`${API}/explorar/perfiles-stakeholder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ idea_texto: idea, stakeholder, sector, pais, cantidad: 4 }),
     })
-      .then(r => r.json())
-      .then(d => setPerfilesPor(stakeholder.id, d.perfiles))
-      .catch(() => {})
+      .then(r => { if (!r.ok) throw new Error(`Error ${r.status}`); return r.json() })
+      .then(d => { if (!d.perfiles?.length) throw new Error('Sin perfiles'); setPerfilesPor(stakeholder.id, d.perfiles) })
+      .catch((e: unknown) => setErrorPerfiles(e instanceof Error ? e.message : 'Error al generar perfiles'))
       .finally(() => setCargandoPerfilesPor(stakeholder.id, false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stakeholder.id])
@@ -320,6 +322,20 @@ function PerfilesPanel({
     }, 1800)
     return () => clearInterval(iv)
   }, [cargando])
+
+  if (!cargando && errorPerfiles) {
+    return (
+      <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
+        <p className="text-red-400 text-sm">⚠ {errorPerfiles}</p>
+        <button
+          onClick={() => { setErrorPerfiles(null); setCargandoPerfilesPor(stakeholder.id, false); setPerfilesPor(stakeholder.id, []) }}
+          className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-4 py-2 rounded-lg transition"
+        >
+          Reintentar
+        </button>
+      </div>
+    )
+  }
 
   if (cargando) {
     return (
@@ -894,7 +910,7 @@ export default function ExplorarPage() {
           ) : (
             <div className="flex flex-col items-center justify-center h-full gap-3">
               <div className="w-16 h-16 rounded-2xl bg-gray-800 border border-gray-700 flex items-center justify-center text-2xl">💬</div>
-              <p className="text-gray-400 text-sm text-center">Selecciona un perfil para iniciar<br />la entrevista de exploración</p>
+              <p className="text-gray-400 text-sm text-center">Selecciona un perfil<br />para ver o continuar la conversación</p>
               <p className="text-gray-600 text-xs text-center max-w-xs">
                 Entrevista al menos 2 perfiles por segmento (4+ mensajes c/u)<br />cubriendo 2 segmentos distintos para sintetizar
               </p>

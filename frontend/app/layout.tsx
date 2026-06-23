@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
+import BackendStatus from './BackendStatus'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -29,10 +30,7 @@ export default function RootLayout({
               <span className="text-gray-600 text-sm hidden sm:block">·</span>
               <span className="text-gray-500 text-sm hidden sm:block">DNT Startups UPAO</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-gray-400 text-xs">Backend conectado</span>
-            </div>
+            <BackendStatus />
           </div>
         </header>
 
