@@ -161,6 +161,7 @@ export default function DebatePage() {
 
   useEffect(() => {
     if (!idea) { router.replace('/'); return }
+    if (estado === 'completado') { setFaseInteraccion('preguntando'); return }
     if (estado !== 'idle') return
     iniciarDebate()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -478,9 +479,6 @@ export default function DebatePage() {
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
                       <span className="font-semibold text-white text-sm">{arg.agente_rol}</span>
-                      {arg.agente_nombre && (
-                        <span className="text-gray-500 text-xs ml-2">— {arg.agente_nombre}</span>
-                      )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className={`text-xs font-medium ${COLOR_POSICION[arg.posicion] || 'text-gray-400'}`}>

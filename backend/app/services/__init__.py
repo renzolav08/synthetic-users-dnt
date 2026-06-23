@@ -77,7 +77,7 @@ IDEA DEL EMPRENDEDOR:
 Responde ÚNICAMENTE con un JSON válido con esta estructura exacta:
 {{
   "sector": "sector principal del negocio",
-  "pais": "{'país confirmado: ' + pais_sugerido if pais_sugerido else 'país detectado o inferido'}",
+  "pais": "{pais_sugerido if pais_sugerido else 'país detectado o inferido'}",
   "region": "ciudad o región si se menciona, null si no",
   "idioma": "español",
   "usuarios_objetivo": "descripción del segmento de usuarios principales",

@@ -776,6 +776,20 @@ export default function ExplorarPage() {
   return (
     <main className="h-[calc(100vh-120px)] flex flex-col">
 
+      {/* Overlay de síntesis */}
+      {cargandoSintesis && (
+        <div className="fixed inset-0 z-50 bg-gray-950/90 backdrop-blur flex flex-col items-center justify-center gap-5">
+          <div className="relative w-16 h-16">
+            <div className="absolute inset-0 border-4 border-purple-700/30 rounded-full" />
+            <div className="absolute inset-0 border-4 border-t-purple-500 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" />
+          </div>
+          <div className="text-center">
+            <p className="text-white text-lg font-semibold">Sintetizando exploración</p>
+            <p className="text-gray-400 text-sm mt-1">Analizando conversaciones y detectando patrones...</p>
+          </div>
+        </div>
+      )}
+
       {/* Barra superior */}
       <div className="border-b border-gray-800 bg-gray-900/80 backdrop-blur px-4 py-3 flex items-center justify-between flex-shrink-0">
         <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm transition">
