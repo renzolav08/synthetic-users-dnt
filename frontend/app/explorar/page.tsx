@@ -679,13 +679,14 @@ export default function ExplorarPage() {
       const res = await fetch(`${API}/explorar/stakeholders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idea_texto: idea }),
+        body: JSON.stringify({ idea_texto: idea, pais: pais || undefined }),
       })
       if (!res.ok) throw new Error(`Error del servidor: ${res.status}`)
       const data = await res.json()
       if (!data.stakeholders?.length) throw new Error('No se detectaron stakeholders')
       setStakeholders(data.stakeholders)
-      useExplorarStore.getState().setIdea(idea, data.sector ?? '', data.pais ?? '')
+      // Preservar el país seleccionado por el usuario — no dejarlo sobreescribir por el backend
+      useExplorarStore.getState().setIdea(idea, data.sector ?? '', pais || data.pais ?? '')
       setStakeholderActivo(data.stakeholders[0].id)
     } catch (e: unknown) {
       setErrorStakeholders(e instanceof Error ? e.message : 'Error al conectar con el backend')

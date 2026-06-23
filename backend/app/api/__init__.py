@@ -185,7 +185,7 @@ async def endpoint_detectar_stakeholders(idea: IdeaInput):
     Dado el texto de una idea, devuelve los stakeholders clave con quienes
     el emprendedor debería conversar, ordenados por relevancia.
     """
-    resultado = await detectar_stakeholders(idea.idea_texto)
+    resultado = await detectar_stakeholders(idea.idea_texto, pais_sugerido=idea.pais)
     return resultado
 
 

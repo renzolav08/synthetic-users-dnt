@@ -706,15 +706,16 @@ REGLAS:
 
 
 # ── Nodo 0: Detección de stakeholders ────────────────────────────────────────
-async def detectar_stakeholders(idea_texto: str) -> StakeholdersDetectados:
+async def detectar_stakeholders(idea_texto: str, pais_sugerido: str | None = None) -> StakeholdersDetectados:
     """
     A partir de la idea, identifica con quiénes debería hablar el emprendedor
     para validar su propuesta antes de debatirla formalmente.
     """
+    pais_instruccion = f"\nPaís de operación del emprendedor: {pais_sugerido}. Usa este país explícitamente — no lo inferas de la idea." if pais_sugerido else ""
     prompt = f"""Eres un experto en investigación de usuarios y desarrollo de clientes (Customer Discovery).
 
 Un emprendedor tiene la siguiente idea de negocio:
-{idea_texto}
+{idea_texto}{pais_instruccion}
 
 Tu tarea es identificar TODOS los stakeholders con quienes debería conversar este emprendedor
 para validar su idea. Piensa más allá del usuario final directo — considera decisores,
@@ -723,7 +724,7 @@ influenciadores, aliados y posibles bloqueadores.
 Responde ÚNICAMENTE con un JSON válido con esta estructura:
 {{
   "sector": "sector de la idea",
-  "pais": "país detectado o inferido",
+  "pais": "{pais_sugerido or 'país detectado o inferido'}",
   "razonamiento": "explicación breve de por qué elegiste estos stakeholders",
   "stakeholders": [
     {{
