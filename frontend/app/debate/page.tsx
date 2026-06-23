@@ -246,7 +246,12 @@ export default function DebatePage() {
         body: JSON.stringify({
           idea_texto: idea,
           replica_usuario: texto,
-          perfiles: perfilesDebate.length > 0 ? perfilesDebate : contexto.agentes,
+          perfiles: argumentos.map(a => ({
+            nombre: a.agente_nombre,
+            rol: a.agente_rol,
+            categoria: a.agente_categoria,
+            peso: a.agente_peso,
+          })),
           contexto: contexto,
           argumentos_previos: argumentos,
           session_id: sessionId,
