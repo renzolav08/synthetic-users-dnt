@@ -164,6 +164,7 @@ export default function DebatePage() {
 
   useEffect(() => {
     if (!idea) { router.replace('/'); return }
+    if (!insights_exploracion) { router.replace('/explorar'); return }
     if (estado === 'completado') { setFaseInteraccion('preguntando'); return }
     if (estado !== 'idle') return
     iniciarDebate()

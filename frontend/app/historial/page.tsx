@@ -18,7 +18,7 @@ const LABEL_VEREDICTO: Record<string, string> = {
 
 export default function HistorialPage() {
   const router = useRouter()
-  const { setIdea: setIdeaDebate, setInsightsExploracion, reset: resetDebate } = useDebateStore()
+  const { reset: resetDebate } = useDebateStore()
   const { idea: ideaExplorar, setIdea: setIdeaExplorar, reset: resetExplorar } = useExplorarStore()
   const { entradas, limpiar } = useHistorialStore()
 
@@ -41,12 +41,6 @@ export default function HistorialPage() {
     router.push('/explorar')
   }
 
-  function nuevoDebate(idea: string) {
-    resetDebate()
-    setIdeaDebate(idea)
-    setInsightsExploracion(null)
-    router.push('/debate')
-  }
 
   return (
     <main className="min-h-screen bg-gray-950 text-white">
@@ -103,21 +97,12 @@ export default function HistorialPage() {
                     </span>
 
                     <div className="flex flex-col gap-1.5 mt-1 items-end">
-                      {/* Ver exploración — solo disponible si es la sesión activa */}
                       <button
                         onClick={() => verExploracion(d.idea_texto)}
                         className="text-xs text-purple-400 hover:text-purple-300 transition"
                         title={ideaExplorar === d.idea_texto ? 'Ver perfiles y conversaciones de esta exploración' : 'Re-explorar esta idea desde cero'}
                       >
-                        {ideaExplorar === d.idea_texto ? '← Ver exploración' : '← Re-explorar'}
-                      </button>
-
-                      {/* Nuevo debate */}
-                      <button
-                        onClick={() => nuevoDebate(d.idea_texto)}
-                        className="text-xs text-blue-400 hover:text-blue-300 transition"
-                      >
-                        Nuevo debate →
+                        {ideaExplorar === d.idea_texto ? '← Ver exploración' : '← Re-explorar idea'}
                       </button>
                     </div>
                   </div>
