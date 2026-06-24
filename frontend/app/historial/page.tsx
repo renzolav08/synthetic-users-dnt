@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useDebateStore } from '@/store/useDebateStore'
+import { useExplorarStore } from '@/store/useExplorarStore'
 import { useHistorialStore } from '@/store/useHistorialStore'
 
 const COLOR_VEREDICTO: Record<string, string> = {
@@ -17,7 +18,8 @@ const LABEL_VEREDICTO: Record<string, string> = {
 
 export default function HistorialPage() {
   const router = useRouter()
-  const { setIdea, setInsightsExploracion, reset } = useDebateStore()
+  const { setIdea: setIdeaDebate, setInsightsExploracion, reset: resetDebate } = useDebateStore()
+  const { idea: ideaExplorar, setIdea: setIdeaExplorar, reset: resetExplorar } = useExplorarStore()
   const { entradas, limpiar } = useHistorialStore()
 
   function formatFecha(iso: string) {
@@ -29,9 +31,19 @@ export default function HistorialPage() {
     } catch { return iso }
   }
 
-  function reevaluar(idea: string) {
-    reset()
-    setIdea(idea)
+  function verExploracion(idea: string) {
+    // Si la idea coincide con la sesión activa en explorarStore, ir directo — verán sus perfiles y conversaciones
+    // Si no, resetear explorar y pre-cargar la idea para que puedan re-explorar desde cero
+    if (ideaExplorar !== idea) {
+      resetExplorar()
+      setIdeaExplorar(idea, '', '')
+    }
+    router.push('/explorar')
+  }
+
+  function nuevoDebate(idea: string) {
+    resetDebate()
+    setIdeaDebate(idea)
     setInsightsExploracion(null)
     router.push('/debate')
   }
@@ -67,10 +79,11 @@ export default function HistorialPage() {
           <div className="space-y-3">
             {entradas.map((d) => (
               <div key={d.session_id} className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 transition">
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  {/* Info principal */}
                   <div className="flex-1 min-w-0">
                     <p className="text-gray-200 text-sm leading-relaxed">
-                      {d.idea_texto.length > 120 ? d.idea_texto.slice(0, 120) + '…' : d.idea_texto}
+                      {d.idea_texto.length > 140 ? d.idea_texto.slice(0, 140) + '…' : d.idea_texto}
                     </p>
                     {d.resumen_ejecutivo && (
                       <p className="text-gray-500 text-xs mt-1.5 line-clamp-2 leading-relaxed">
@@ -79,6 +92,8 @@ export default function HistorialPage() {
                     )}
                     <p className="text-gray-600 text-xs mt-2">{formatFecha(d.fecha)}</p>
                   </div>
+
+                  {/* Acciones */}
                   <div className="flex flex-col items-end gap-2 flex-shrink-0">
                     <span className={`text-xs border px-2.5 py-1 rounded-full font-medium ${COLOR_VEREDICTO[d.recomendacion] || 'bg-gray-800 border-gray-700 text-gray-300'}`}>
                       {LABEL_VEREDICTO[d.recomendacion] || d.recomendacion}
@@ -86,12 +101,25 @@ export default function HistorialPage() {
                     <span className="text-xs text-gray-500">
                       {(d.nivel_confianza * 100).toFixed(0)}% confianza
                     </span>
-                    <button
-                      onClick={() => reevaluar(d.idea_texto)}
-                      className="text-xs text-blue-400 hover:text-blue-300 transition mt-1"
-                    >
-                      Re-evaluar →
-                    </button>
+
+                    <div className="flex flex-col gap-1.5 mt-1 items-end">
+                      {/* Ver exploración — solo disponible si es la sesión activa */}
+                      <button
+                        onClick={() => verExploracion(d.idea_texto)}
+                        className="text-xs text-purple-400 hover:text-purple-300 transition"
+                        title={ideaExplorar === d.idea_texto ? 'Ver perfiles y conversaciones de esta exploración' : 'Re-explorar esta idea desde cero'}
+                      >
+                        {ideaExplorar === d.idea_texto ? '← Ver exploración' : '← Re-explorar'}
+                      </button>
+
+                      {/* Nuevo debate */}
+                      <button
+                        onClick={() => nuevoDebate(d.idea_texto)}
+                        className="text-xs text-blue-400 hover:text-blue-300 transition"
+                      >
+                        Nuevo debate →
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
