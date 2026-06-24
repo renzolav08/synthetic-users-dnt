@@ -49,7 +49,7 @@ export default function HistorialPage() {
           <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm transition">
             ← Inicio
           </button>
-          <h1 className="text-sm font-semibold text-white">Historial de debates</h1>
+          <h1 className="text-sm font-semibold text-white">Historial</h1>
           {entradas.length > 0 ? (
             <button onClick={limpiar} className="text-xs text-gray-500 hover:text-red-400 transition">
               Limpiar

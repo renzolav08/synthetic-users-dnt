@@ -148,7 +148,7 @@ export default function Home() {
           href="/historial"
           className="text-xs text-gray-600 hover:text-gray-400 transition underline underline-offset-2"
         >
-          Ver historial de debates →
+          Ver historial →
         </a>
       </div>
 
