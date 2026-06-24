@@ -450,3 +450,27 @@ async def endpoint_replica(body: ReplicaInput):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/debate/consenso-final")
+async def endpoint_consenso_final(body: dict):
+    """
+    Genera el consenso final tomando en cuenta los argumentos iniciales
+    y todas las rondas de réplica del usuario.
+    """
+    idea_texto = body.get("idea_texto", "")
+    contexto_raw = body.get("contexto", {})
+    argumentos_iniciales = body.get("argumentos", [])
+    rondas = body.get("rondas", [])
+    session_id = body.get("session_id")
+
+    ctx = ContextoDetectado(**contexto_raw)
+
+    # Combinar argumentos iniciales con respuestas de todas las rondas
+    todos_argumentos = list(argumentos_iniciales)
+    for ronda in rondas:
+        for resp in ronda.get("respuestas", []):
+            todos_argumentos.append(resp)
+
+    consenso = await generar_consenso(todos_argumentos, idea_texto, ctx, session_id)
+    return consenso

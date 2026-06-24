@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useDebateStore } from '@/store/useDebateStore'
 import { useExplorarStore } from '@/store/useExplorarStore'
@@ -158,8 +159,8 @@ export default function DebatePage() {
   const [rondas, setRondas] = useState<{ replica: string; respuestas: typeof argumentos }[]>([])
   const [textoReplica, setTextoReplica] = useState('')
   const [enviandoReplica, setEnviandoReplica] = useState(false)
-  // fase: 'debatiendo' | 'preguntando' | 'interviniendo' | 'finalizado'
-  const [faseInteraccion, setFaseInteraccion] = useState<'debatiendo' | 'preguntando' | 'interviniendo' | 'finalizado'>('debatiendo')
+  // fase: 'debatiendo' | 'preguntando' | 'interviniendo' | 'generando_consenso' | 'finalizado'
+  const [faseInteraccion, setFaseInteraccion] = useState<'debatiendo' | 'preguntando' | 'interviniendo' | 'generando_consenso' | 'finalizado'>('debatiendo')
 
   useEffect(() => {
     if (!idea) { router.replace('/'); return }
@@ -312,6 +313,29 @@ export default function DebatePage() {
     }
   }
 
+  async function generarConsensoFinal() {
+    setFaseInteraccion('generando_consenso')
+    try {
+      const res = await fetch(`${API}/debate/consenso-final`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idea_texto: idea,
+          contexto,
+          argumentos,
+          rondas,
+          session_id: sessionId,
+        }),
+      })
+      if (!res.ok) throw new Error(`Error ${res.status}`)
+      const data = await res.json()
+      setArbol(data)
+    } catch {
+      // Si falla, usar el árbol ya calculado durante el debate
+    }
+    setFaseInteraccion('finalizado')
+  }
+
   // HU-007: exportar CSV
   function exportarCSV() {
     const rows = [
@@ -353,8 +377,25 @@ export default function DebatePage() {
     consenso:            'Construyendo el árbol de argumentos...',
   }
 
+  const portalEl = typeof document !== 'undefined' ? document.body : null
+
   return (
     <main className="min-h-screen bg-gray-950 text-white">
+
+      {/* Overlay generando consenso */}
+      {faseInteraccion === 'generando_consenso' && portalEl && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(3,7,18,0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
+          <div style={{ position: 'relative', width: 64, height: 64 }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '4px solid rgba(168,85,247,0.25)' }} />
+            <div className="animate-spin" style={{ position: 'absolute', inset: 0, borderRadius: '50%', borderTop: '4px solid #a855f7', borderRight: '4px solid transparent', borderBottom: '4px solid transparent', borderLeft: '4px solid transparent' }} />
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ color: '#fff', fontSize: 18, fontWeight: 600, marginBottom: 6 }}>Generando consenso final</p>
+            <p style={{ color: '#9ca3af', fontSize: 14 }}>Integrando todos los argumentos y réplicas...</p>
+          </div>
+        </div>,
+        portalEl
+      )}
 
       {/* Modal de encuesta HU-009 */}
       {mostrarEncuesta && sessionId && (
@@ -502,18 +543,8 @@ export default function DebatePage() {
                   key={i}
                   className={`border-l-2 rounded-xl p-5 ${COLORES_ROL[arg.agente_rol] || 'border-gray-600 bg-gray-900'}`}
                 >
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div>
-                      <span className="font-semibold text-white text-sm">{arg.agente_rol}</span>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className={`text-xs font-medium ${COLOR_POSICION[arg.posicion] || 'text-gray-400'}`}>
-                        {ICONO_POSICION[arg.posicion] || '○'} {arg.posicion}
-                      </span>
-                      <span className="text-xs text-gray-600" title="Influencia de este agente en el veredicto final">
-                        peso {((arg.agente_peso ?? 0) * 100).toFixed(0)}%
-                      </span>
-                    </div>
+                  <div className="mb-3">
+                    <span className="font-semibold text-white text-sm">{arg.agente_rol}</span>
                   </div>
                   <p className="text-gray-300 text-sm leading-relaxed">{arg.argumento}</p>
                   {arg.fuente_insight && (
@@ -560,9 +591,8 @@ export default function DebatePage() {
             {/* Respuestas de agentes */}
             {ronda.respuestas.map((resp, i) => (
               <div key={i} className={`border-l-2 rounded-xl p-4 ${COLORES_ROL[resp.agente_rol] || 'border-gray-600 bg-gray-900'}`}>
-                <div className="flex items-center justify-between mb-2">
+                <div className="mb-2">
                   <span className="text-white text-sm font-semibold">{resp.agente_rol}</span>
-                  <span className="text-xs text-gray-500">peso {((resp.agente_peso ?? 0) * 100).toFixed(0)}%</span>
                 </div>
                 <p className="text-gray-300 text-sm leading-relaxed">{resp.argumento}</p>
               </div>
@@ -600,7 +630,7 @@ export default function DebatePage() {
               <div className="flex-1 h-px bg-gray-800" />
             </div>
             <button
-              onClick={() => setFaseInteraccion('finalizado')}
+              onClick={generarConsensoFinal}
               className="w-full bg-purple-700 hover:bg-purple-600 text-white text-sm font-semibold py-3 rounded-xl transition"
             >
               Generar Consenso Final →

@@ -114,7 +114,7 @@ REGLAS PARA LOS AGENTES (genera entre 5 y 7):
   * construcción → contratista, propietario, inspector
   * turismo → viajero, operador turístico, gestor local
   * etc. — usa roles que generarán el debate más valioso para ESTA idea específica
-- La suma de pesos debe ser exactamente 1.0 (distribúyelos equitativamente entre 5-7 agentes)
+- La suma de pesos debe ser exactamente 1.0 (distribúyelos equitativamente entre 4-5 agentes MÁXIMO)
 - Los roles deben ser CONCRETOS y ESPECÍFICOS para el sector, no genéricos
 - NO incluyas texto fuera del JSON"""
 
