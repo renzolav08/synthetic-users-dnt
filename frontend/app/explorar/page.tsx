@@ -703,7 +703,7 @@ export default function ExplorarPage() {
       if (!data.stakeholders?.length) throw new Error('No se detectaron stakeholders')
       setStakeholders(data.stakeholders)
       // Preservar el país seleccionado por el usuario — no dejarlo sobreescribir por el backend
-      useExplorarStore.getState().setIdea(idea, data.sector ?? '', pais || data.pais ?? '')
+      useExplorarStore.getState().setIdea(idea, data.sector ?? '', pais || (data.pais ?? ''))
       setStakeholderActivo(data.stakeholders[0].id)
     } catch (e: unknown) {
       setErrorStakeholders(e instanceof Error ? e.message : 'Error al conectar con el backend')
