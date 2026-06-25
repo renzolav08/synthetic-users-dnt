@@ -36,6 +36,8 @@ export type PerfilSintetico = {
   resultado_deseado: string
   variante_descripcion: string
   forma_de_hablar: FormaDHablar
+  foto_url?: string
+  genero?: 'masculino' | 'femenino'
 }
 
 export type Mensaje = {
@@ -122,11 +124,16 @@ interface ExplorarStore {
   cargandoSintesis: boolean
   errorSintesis: string | null
 
+  // snapshot de conversaciones para historial
+  snapshotExploracion: import('@/store/useHistorialStore').SnapshotExploracion | null
+
   // errores
   errorStakeholders: string | null
 
   // setters
   setIdea: (idea: string, sector: string, pais: string) => void
+  setSnapshotExploracion: (s: import('@/store/useHistorialStore').SnapshotExploracion) => void
+  restaurarDesdeSnapshot: (ideaTexto: string, s: import('@/store/useHistorialStore').SnapshotExploracion) => void
   setErrorStakeholders: (msg: string | null) => void
   setSintesis: (s: SintesisExploracion) => void
   setCargandoSintesis: (v: boolean) => void
@@ -165,6 +172,7 @@ const inicial = {
   sintesis: null,
   cargandoSintesis: false,
   errorSintesis: null,
+  snapshotExploracion: null,
 }
 
 export const useExplorarStore = create<ExplorarStore>()(
@@ -205,6 +213,62 @@ export const useExplorarStore = create<ExplorarStore>()(
   setSintesis: (s) => set({ sintesis: s }),
   setCargandoSintesis: (v) => set({ cargandoSintesis: v }),
   setErrorSintesis: (msg) => set({ errorSintesis: msg }),
+  setSnapshotExploracion: (snap) => set({ snapshotExploracion: snap }),
+
+  restaurarDesdeSnapshot: (ideaTexto, snap) => {
+    const stakeholders: Stakeholder[] = snap.stakeholders.map(sk => ({
+      id: sk.stakeholder_id,
+      nombre: sk.stakeholder_nombre,
+      descripcion: sk.descripcion ?? '',
+      relevancia: (sk.relevancia as 'alta' | 'media' | 'baja') ?? 'alta',
+      tipo: sk.tipo ?? 'usuario_final',
+      preguntas_clave: sk.preguntas_clave ?? [],
+    }))
+
+    const perfilesPor: Record<string, PerfilSintetico[]> = {}
+    const historialPor: Record<string, Mensaje[]> = {}
+    const insightsPor: Record<string, InsightsJTBD | null> = {}
+
+    for (const sk of snap.stakeholders) {
+      perfilesPor[sk.stakeholder_id] = sk.perfiles.map(p => ({
+        stakeholder_id: p.stakeholder_id,
+        stakeholder_nombre: p.stakeholder_nombre,
+        nombre: p.nombre,
+        edad: p.edad,
+        ubicacion: p.ubicacion,
+        ocupacion: p.ocupacion,
+        variante_descripcion: p.variante_descripcion,
+        autopercepcion: p.autopercepcion ?? '',
+        creencias_centrales: p.creencias_centrales ?? [],
+        miedo_oculto: p.miedo_oculto ?? '',
+        job_funcional: p.job_funcional,
+        job_emocional: p.job_emocional,
+        job_social: p.job_social,
+        fricciones: p.fricciones ?? [],
+        temores: p.temores ?? [],
+        resultado_deseado: p.resultado_deseado ?? '',
+        forma_de_hablar: { formalidad: '', estructura_frases: '', vocabulario_tipico: [], tono_emocional: '', frases_caracteristicas: [] },
+        foto_url: p.foto_url,
+        genero: p.genero,
+      }))
+      sk.perfiles.forEach((p, idx) => {
+        const key = `${sk.stakeholder_id}::${idx}`
+        historialPor[key] = p.historial
+        insightsPor[key] = p.insights ?? null
+      })
+    }
+
+    set({
+      ...inicial,
+      idea: ideaTexto,
+      stakeholders,
+      perfilesPor,
+      historialPor,
+      insightsPor,
+      snapshotExploracion: snap,
+      stakeholderActivo: stakeholders[0]?.id ?? null,
+    })
+  },
 
   reset: () => set(inicial),
     }),
@@ -215,6 +279,7 @@ export const useExplorarStore = create<ExplorarStore>()(
         idea: s.idea,
         sector: s.sector,
         pais: s.pais,
+        snapshotExploracion: s.snapshotExploracion,
         stakeholders: s.stakeholders,
         perfilesPor: s.perfilesPor,
         historialPor: s.historialPor,

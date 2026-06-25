@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useDebateStore } from '@/store/useDebateStore'
 import { useExplorarStore } from '@/store/useExplorarStore'
 import { useHistorialStore } from '@/store/useHistorialStore'
+import AvatarHablante from '@/components/AvatarHablante'
 
 const COLORES_ROL: Record<string, string> = {
   'Usuario Objetivo':    'border-purple-500 bg-purple-950/30',
@@ -141,13 +142,65 @@ function EncuestaModal({ sessionId, onClose }: { sessionId: string; onClose: () 
   )
 }
 
+// ── Tarjeta de argumento con avatar hablante ─────────────────────────────────
+function ArgumentoCard({ arg }: { arg: import('@/store/useDebateStore').Argumento }) {
+  const [textoHablar, setTextoHablar] = useState<string | undefined>()
+  const [reproducido, setReproducido] = useState(false)
+
+  function escuchar() {
+    setTextoHablar(arg.argumento)
+    setReproducido(true)
+  }
+
+  return (
+    <div className={`border-l-2 rounded-xl p-5 ${COLORES_ROL[arg.agente_rol] || 'border-gray-600 bg-gray-900'}`}>
+      <div className="flex items-center gap-3 mb-3">
+        {arg.foto_url && (
+          <AvatarHablante
+            fotoUrl={arg.foto_url}
+            genero={arg.genero ?? 'masculino'}
+            nombre={arg.agente_nombre || arg.agente_rol}
+            textoParaHablar={textoHablar}
+            size="sm"
+          />
+        )}
+        <div className="flex-1 min-w-0">
+          <span className="font-semibold text-white text-sm block">{arg.agente_rol}</span>
+          {arg.agente_nombre && (
+            <span className="text-gray-500 text-xs">{arg.agente_nombre}</span>
+          )}
+        </div>
+        {arg.foto_url && !reproducido && (
+          <button
+            onClick={escuchar}
+            className="flex-shrink-0 text-xs text-gray-500 hover:text-white border border-gray-700 hover:border-gray-500 px-2.5 py-1 rounded-lg transition flex items-center gap-1.5"
+            title="Escuchar argumento"
+          >
+            ▶ Escuchar
+          </button>
+        )}
+      </div>
+      <p className="text-gray-300 text-sm leading-relaxed">{arg.argumento}</p>
+      {arg.fuente_insight && (
+        <div className="mt-3 pt-3 border-t border-white/5 flex items-start gap-2">
+          <span className="text-purple-400 text-xs flex-shrink-0 mt-0.5">📎</span>
+          <p className="text-purple-300/80 text-xs italic leading-relaxed">
+            <span className="not-italic font-medium text-purple-400">Insight de campo: </span>
+            &ldquo;{arg.fuente_insight}&rdquo;
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function DebatePage() {
   const router = useRouter()
   const {
     idea, estado, contexto, argumentos, arbol, reset, insights_exploracion,
     sessionId, setEstado, setContexto, addArgumento, setArbol, setError, setSessionId,
   } = useDebateStore()
-  const { pais: paisExploracion } = useExplorarStore()
+  const { pais: paisExploracion, snapshotExploracion } = useExplorarStore()
   const { agregar: agregarHistorial } = useHistorialStore()
 
   // HU-003: panel de contexto colapsable
@@ -157,8 +210,13 @@ export default function DebatePage() {
   const [encuestaMostrada, setEncuestaMostrada] = useState(false)
   // Debate interactivo
   const [rondas, setRondas] = useState<{ replica: string; respuestas: typeof argumentos }[]>([])
+  const yaGuardoRef = useRef(false)
   const [textoReplica, setTextoReplica] = useState('')
   const [enviandoReplica, setEnviandoReplica] = useState(false)
+  const [grabandoReplica, setGrabandoReplica] = useState(false)
+  const [transcribiendoReplica, setTranscribiendoReplica] = useState(false)
+  const mediaRecorderReplicaRef = useRef<MediaRecorder | null>(null)
+  const enviarReplicaRef = useRef<() => void>(() => {})
   // fase: 'debatiendo' | 'preguntando' | 'interviniendo' | 'generando_consenso' | 'finalizado'
   const [faseInteraccion, setFaseInteraccion] = useState<'debatiendo' | 'preguntando' | 'interviniendo' | 'generando_consenso' | 'finalizado'>('debatiendo')
 
@@ -223,7 +281,8 @@ export default function DebatePage() {
               else if (tipo === 'consenso')  {
                 setArbol(data)
                 setEstado('consenso')
-                if (idea && data.recomendacion) {
+                if (idea && data.recomendacion && !yaGuardoRef.current) {
+                  yaGuardoRef.current = true
                   agregarHistorial({
                     session_id: parsed.session_id ?? crypto.randomUUID(),
                     idea_texto: idea,
@@ -231,6 +290,7 @@ export default function DebatePage() {
                     nivel_confianza: data.nivel_confianza ?? 0,
                     resumen_ejecutivo: data.resumen_ejecutivo ?? '',
                     fecha: new Date().toISOString(),
+                    exploracion: snapshotExploracion ?? undefined,
                   })
                 }
               }
@@ -245,6 +305,41 @@ export default function DebatePage() {
       const msg = e instanceof Error ? e.message : 'Error inesperado'
       setError(msg)
     }
+  }
+
+  enviarReplicaRef.current = () => enviarReplica()
+
+  function toggleMicReplica() {
+    if (grabandoReplica) {
+      mediaRecorderReplicaRef.current?.stop()
+      return
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      const chunks: BlobPart[] = []
+      const recorder = new MediaRecorder(stream)
+      mediaRecorderReplicaRef.current = recorder
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop())
+        setGrabandoReplica(false)
+        setTranscribiendoReplica(true)
+        try {
+          const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+          const form = new FormData()
+          form.append('file', blob, 'audio.webm')
+          const res = await fetch(`${API}/transcribir`, { method: 'POST', body: form })
+          const { texto } = await res.json()
+          if (texto?.trim()) {
+            setTextoReplica(texto.trim())
+            setTimeout(() => enviarReplicaRef.current(), 400)
+          }
+        } catch { /* silencioso */ } finally {
+          setTranscribiendoReplica(false)
+        }
+      }
+      recorder.start()
+      setGrabandoReplica(true)
+    }).catch(() => {})
   }
 
   async function enviarReplica() {
@@ -326,6 +421,7 @@ export default function DebatePage() {
           argumentos,
           rondas,
           session_id: sessionId,
+          insights_exploracion: insights_exploracion ?? null,
         }),
       })
       if (!res.ok) throw new Error(`Error ${res.status}`)
@@ -540,24 +636,7 @@ export default function DebatePage() {
             </h2>
             <div className="space-y-4">
               {argumentos.map((arg, i) => (
-                <div
-                  key={i}
-                  className={`border-l-2 rounded-xl p-5 ${COLORES_ROL[arg.agente_rol] || 'border-gray-600 bg-gray-900'}`}
-                >
-                  <div className="mb-3">
-                    <span className="font-semibold text-white text-sm">{arg.agente_rol}</span>
-                  </div>
-                  <p className="text-gray-300 text-sm leading-relaxed">{arg.argumento}</p>
-                  {arg.fuente_insight && (
-                    <div className="mt-3 pt-3 border-t border-white/5 flex items-start gap-2">
-                      <span className="text-purple-400 text-xs flex-shrink-0 mt-0.5">📎</span>
-                      <p className="text-purple-300/80 text-xs italic leading-relaxed">
-                        <span className="not-italic font-medium text-purple-400">Insight de campo: </span>
-                        &ldquo;{arg.fuente_insight}&rdquo;
-                      </p>
-                    </div>
-                  )}
-                </div>
+                <ArgumentoCard key={i} arg={arg} />
               ))}
 
               {cargando && estado === 'debatiendo' && contexto && argumentos.length < contexto.agentes.length && (
@@ -591,12 +670,7 @@ export default function DebatePage() {
             </div>
             {/* Respuestas de agentes */}
             {ronda.respuestas.map((resp, i) => (
-              <div key={i} className={`border-l-2 rounded-xl p-4 ${COLORES_ROL[resp.agente_rol] || 'border-gray-600 bg-gray-900'}`}>
-                <div className="mb-2">
-                  <span className="text-white text-sm font-semibold">{resp.agente_rol}</span>
-                </div>
-                <p className="text-gray-300 text-sm leading-relaxed">{resp.argumento}</p>
-              </div>
+              <ArgumentoCard key={i} arg={resp} />
             ))}
             {/* Spinner mientras carga esta ronda */}
             {enviandoReplica && ri === rondas.length - 1 && ronda.respuestas.length < (contexto?.agentes.length ?? 5) && (
@@ -643,28 +717,43 @@ export default function DebatePage() {
         {faseInteraccion === 'interviniendo' && (
           <div className="bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-3">
             <p className="text-sm text-gray-300 font-medium">Tu réplica</p>
+            {transcribiendoReplica && (
+              <p className="text-xs text-gray-400 italic">Transcribiendo...</p>
+            )}
             <div className="flex gap-2">
               <textarea
                 value={textoReplica}
                 onChange={e => setTextoReplica(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarReplica() } }}
-                disabled={enviandoReplica}
+                disabled={enviandoReplica || grabandoReplica}
                 autoFocus
-                placeholder="Ej: ¿Qué pasa si el primer mes es gratuito? ¿Cambia la viabilidad del modelo?"
+                placeholder={grabandoReplica ? 'Grabando...' : 'Ej: ¿Qué pasa si el primer mes es gratuito?'}
                 rows={3}
                 className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-white placeholder-gray-500 text-sm resize-none focus:outline-none focus:border-blue-600 transition disabled:opacity-50"
               />
-              <button
-                onClick={enviarReplica}
-                disabled={!textoReplica.trim() || enviandoReplica}
-                className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 rounded-xl transition text-sm font-medium self-end py-2.5"
-              >
-                {enviandoReplica ? (
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  </span>
-                ) : '→'}
-              </button>
+              <div className="flex flex-col gap-2 self-end">
+                <button
+                  onClick={toggleMicReplica}
+                  disabled={enviandoReplica}
+                  title={grabandoReplica ? 'Detener grabación' : 'Hablar'}
+                  className={`w-10 h-10 rounded-xl transition flex items-center justify-center
+                    ${grabandoReplica
+                      ? 'bg-red-600 hover:bg-red-500 animate-pulse'
+                      : 'bg-gray-700 hover:bg-gray-600 disabled:opacity-40'
+                    }`}
+                >
+                  🎤
+                </button>
+                <button
+                  onClick={enviarReplica}
+                  disabled={!textoReplica.trim() || enviandoReplica || grabandoReplica}
+                  className="w-10 h-10 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-xl transition text-sm font-medium flex items-center justify-center"
+                >
+                  {enviandoReplica
+                    ? <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    : '→'}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -813,7 +902,7 @@ export default function DebatePage() {
           </div>
         )}
 
-        {cargando && estado !== 'error' && argumentos.length === 0 && (
+        {cargando && (estado as string) !== 'error' && argumentos.length === 0 && (
           <div className="text-center py-20">
             <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
             <p className="text-gray-400 text-sm">{ESTADOS_LABEL[estado] || 'Iniciando...'}</p>

@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useDebateStore } from '@/store/useDebateStore'
 import { useExplorarStore } from '@/store/useExplorarStore'
-import { useHistorialStore } from '@/store/useHistorialStore'
+import { useHistorialStore, type EntradaHistorial } from '@/store/useHistorialStore'
 
 const COLOR_VEREDICTO: Record<string, string> = {
   viable: 'bg-green-900/60 border-green-700 text-green-300',
@@ -19,7 +19,7 @@ const LABEL_VEREDICTO: Record<string, string> = {
 export default function HistorialPage() {
   const router = useRouter()
   const { reset: resetDebate } = useDebateStore()
-  const { idea: ideaExplorar, setIdea: setIdeaExplorar, reset: resetExplorar } = useExplorarStore()
+  const { idea: ideaActiva, restaurarDesdeSnapshot, reset: resetExplorar, setIdea } = useExplorarStore()
   const { entradas, limpiar } = useHistorialStore()
 
   function formatFecha(iso: string) {
@@ -31,16 +31,26 @@ export default function HistorialPage() {
     } catch { return iso }
   }
 
-  function verExploracion(idea: string) {
-    // Si la idea coincide con la sesión activa en explorarStore, ir directo — verán sus perfiles y conversaciones
-    // Si no, resetear explorar y pre-cargar la idea para que puedan re-explorar desde cero
-    if (ideaExplorar !== idea) {
-      resetExplorar()
-      setIdeaExplorar(idea, '', '')
+  function verExploracion(entrada: EntradaHistorial) {
+    if (entrada.exploracion?.stakeholders?.length) {
+      // Restaurar snapshot al store y navegar — el usuario verá los perfiles y conversaciones
+      restaurarDesdeSnapshot(entrada.idea_texto, entrada.exploracion)
+      router.push('/explorar')
+      return
     }
-    router.push('/explorar')
+    // Sin snapshot — si la sesión activa coincide, ir directo
+    if (ideaActiva === entrada.idea_texto) {
+      router.push('/explorar')
+      return
+    }
+    // Sin snapshot y sesión diferente — re-explorar desde cero
+    const ok = window.confirm('Esta sesión no tiene conversaciones guardadas.\n¿Iniciar nueva exploración con esta idea?')
+    if (ok) {
+      resetExplorar()
+      setIdea(entrada.idea_texto, '', '')
+      router.push('/explorar')
+    }
   }
-
 
   return (
     <main className="min-h-screen bg-gray-950 text-white">
@@ -74,7 +84,6 @@ export default function HistorialPage() {
             {entradas.map((d) => (
               <div key={d.session_id} className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 transition">
                 <div className="flex items-start gap-4">
-                  {/* Info principal */}
                   <div className="flex-1 min-w-0">
                     <p className="text-gray-200 text-sm leading-relaxed">
                       {d.idea_texto.length > 140 ? d.idea_texto.slice(0, 140) + '…' : d.idea_texto}
@@ -87,7 +96,6 @@ export default function HistorialPage() {
                     <p className="text-gray-600 text-xs mt-2">{formatFecha(d.fecha)}</p>
                   </div>
 
-                  {/* Acciones */}
                   <div className="flex flex-col items-end gap-2 flex-shrink-0">
                     <span className={`text-xs border px-2.5 py-1 rounded-full font-medium ${COLOR_VEREDICTO[d.recomendacion] || 'bg-gray-800 border-gray-700 text-gray-300'}`}>
                       {LABEL_VEREDICTO[d.recomendacion] || d.recomendacion}
@@ -95,16 +103,12 @@ export default function HistorialPage() {
                     <span className="text-xs text-gray-500">
                       {(d.nivel_confianza * 100).toFixed(0)}% confianza
                     </span>
-
-                    <div className="flex flex-col gap-1.5 mt-1 items-end">
-                      <button
-                        onClick={() => verExploracion(d.idea_texto)}
-                        className="text-xs text-purple-400 hover:text-purple-300 transition"
-                        title={ideaExplorar === d.idea_texto ? 'Ver perfiles y conversaciones de esta exploración' : 'Re-explorar esta idea desde cero'}
-                      >
-                        {ideaExplorar === d.idea_texto ? '← Ver exploración' : '← Re-explorar idea'}
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => verExploracion(d)}
+                      className="text-xs text-purple-400 hover:text-purple-300 transition mt-1"
+                    >
+                      {d.exploracion?.stakeholders?.length ? '💬 Ver exploración' : '← Re-explorar idea'}
+                    </button>
                   </div>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from app.schemas import IdeaInput, ContextoDetectado, ConversacionInput, PatronesInput, SintesisInput, EncuestaInput, ReplicaInput
 from app.services import (
@@ -15,8 +15,10 @@ from app.services import (
     sintetizar_exploracion,
     detectar_supuestos,
     get_session_tokens,
+    generar_audio_tts,
 )
 from app.db import save_debate, get_debates, get_debate, save_encuesta
+import base64
 import json
 import asyncio
 import uuid
@@ -27,6 +29,42 @@ router = APIRouter()
 @router.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@router.post("/transcribir")
+async def endpoint_transcribir(file: UploadFile = File(...)):
+    """Transcribe audio usando OpenAI Whisper. Acepta webm/mp4/ogg/wav."""
+    from app.services import client
+    audio_bytes = await file.read()
+    response = await client.audio.transcriptions.create(
+        model="whisper-1",
+        file=(file.filename or "audio.webm", audio_bytes, file.content_type or "audio/webm"),
+        language="es",
+    )
+    return {"texto": response.text}
+
+
+@router.post("/tts")
+async def endpoint_tts(body: dict):
+    """
+    Convierte texto a PCM16 mono 16 kHz para Simli.
+    Body: { "texto": "...", "genero": "masculino|femenino" }
+    """
+    texto = body.get("texto", "")
+    genero = body.get("genero", "masculino")
+    if not texto:
+        return {"audio_base64": "", "sample_rate": 16000}
+
+    voz_map = {"femenino": "nova", "masculino": "echo"}
+    voz = voz_map.get(genero, "alloy")
+
+    pcm, wav = await generar_audio_tts(texto, voz)
+    return {
+        "audio_base64": base64.b64encode(pcm).decode(),  # PCM16 16kHz para Simli
+        "wav_base64": base64.b64encode(wav).decode(),    # WAV 16kHz para reproducción directa
+        "sample_rate": 16000,
+        "format": "pcm16",
+    }
 
 
 @router.post("/analizar-contexto", response_model=ContextoDetectado)
@@ -133,7 +171,10 @@ async def evaluar_stream(idea: IdeaInput):
             yield f"data: {json.dumps({'tipo': 'argumento', 'data': arg})}\n\n"
 
         # Nodo 5
-        consenso = await generar_consenso(argumentos, idea.idea_texto, contexto, session_id)
+        consenso = await generar_consenso(
+            argumentos, idea.idea_texto, contexto, session_id,
+            insights_exploracion=idea.insights_exploracion,
+        )
         yield f"data: {json.dumps({'tipo': 'consenso', 'data': consenso})}\n\n"
 
         # TA-001/TA-002: guardar sesión en DB con tokens
@@ -463,6 +504,7 @@ async def endpoint_consenso_final(body: dict):
     argumentos_iniciales = body.get("argumentos", [])
     rondas = body.get("rondas", [])
     session_id = body.get("session_id")
+    insights_exploracion = body.get("insights_exploracion")
 
     ctx = ContextoDetectado(**contexto_raw)
 
@@ -472,5 +514,8 @@ async def endpoint_consenso_final(body: dict):
         for resp in ronda.get("respuestas", []):
             todos_argumentos.append(resp)
 
-    consenso = await generar_consenso(todos_argumentos, idea_texto, ctx, session_id)
+    consenso = await generar_consenso(
+        todos_argumentos, idea_texto, ctx, session_id,
+        insights_exploracion=insights_exploracion,
+    )
     return consenso

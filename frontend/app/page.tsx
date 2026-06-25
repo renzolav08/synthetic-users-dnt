@@ -22,11 +22,17 @@ export default function Home() {
   const [texto, setTexto] = useState('')
   const [pais, setPais] = useState('Perú')
   const [detectandoPais, setDetectandoPais] = useState(true)
-  const { estado } = useDebateStore()
+  const { estado, setEstado } = useDebateStore()
   const explorarStore = useExplorarStore()
   const supuestosStore = useSupuestosStore()
   const router = useRouter()
-  const cargando = estado !== 'idle' && estado !== 'error'
+  const cargando = false
+
+  useEffect(() => {
+    // Si el debate quedó en progreso al volver al home, resetear a idle
+    if (estado !== 'idle' && estado !== 'error') setEstado('idle')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     fetch('https://ipapi.co/json/')

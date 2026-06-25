@@ -27,6 +27,8 @@ export type Argumento = {
   argumento: string
   posicion: string
   fuente_insight?: string | null
+  foto_url?: string
+  genero?: 'masculino' | 'femenino'
 }
 
 export type ArbolArgumentos = {

@@ -7,7 +7,10 @@ from app.schemas import (
 )
 from dotenv import load_dotenv
 import asyncio
+import base64
 import hashlib
+import httpx
+import numpy as np
 import os
 import json
 import time
@@ -55,6 +58,70 @@ load_dotenv()
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+
+
+# ── Foto realista (randomuser.me) ────────────────────────────────────────────
+async def _fetch_photo(genero: str) -> str:
+    """Devuelve URL de foto real de randomuser.me según género."""
+    gender = "female" if genero == "femenino" else "male"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as hc:
+            r = await hc.get(
+                f"https://randomuser.me/api/?gender={gender}&nat=pe,mx,co,es"
+            )
+            data = r.json()
+            return data["results"][0]["picture"]["large"]
+    except Exception:
+        seed = int(time.time() * 1000) % 9999
+        return f"https://api.dicebear.com/9.x/personas/svg?seed={seed}"
+
+
+# ── TTS → PCM16 a 16 kHz para Simli ──────────────────────────────────────────
+def _downsample_pcm(pcm_bytes: bytes, from_rate: int = 24000, to_rate: int = 16000) -> bytes:
+    """Remuestrea PCM16 mono de from_rate a to_rate usando numpy."""
+    samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float64)
+    n_out = int(len(samples) * to_rate / from_rate)
+    x_old = np.linspace(0, len(samples) - 1, len(samples))
+    x_new = np.linspace(0, len(samples) - 1, n_out)
+    resampled = np.interp(x_new, x_old, samples).astype(np.int16)
+    return resampled.tobytes()
+
+
+def _pcm_a_wav(pcm_bytes: bytes, sample_rate: int = 16000) -> bytes:
+    """Envuelve PCM16 mono en un header WAV para reproducción directa en el navegador."""
+    import struct
+    data_size = len(pcm_bytes)
+    header = struct.pack(
+        '<4sI4s4sIHHIIHH4sI',
+        b'RIFF', data_size + 36, b'WAVE',
+        b'fmt ', 16,
+        1,           # PCM
+        1,           # mono
+        sample_rate,
+        sample_rate * 2,   # byte rate (16 bits = 2 bytes)
+        2,           # block align
+        16,          # bits per sample
+        b'data', data_size,
+    )
+    return header + pcm_bytes
+
+
+async def generar_audio_tts(texto: str, voz: str = "nova") -> tuple[bytes, bytes]:
+    """
+    Convierte texto a audio via OpenAI TTS.
+    Retorna (pcm16_16khz, wav_16khz):
+      - pcm16_16khz: PCM16 mono 16kHz para Simli
+      - wav_16khz:   WAV 16kHz para reproducción directa en navegador
+    """
+    response = await client.audio.speech.create(
+        model="tts-1",
+        voice=voz,
+        input=texto,
+        response_format="pcm",  # raw PCM16 a 24 kHz
+    )
+    pcm16 = _downsample_pcm(response.content, 24000, 16000)
+    wav = _pcm_a_wav(pcm16, 16000)
+    return pcm16, wav
 
 
 # ── Nodo 1: Detección de contexto ────────────────────────────────────────────
@@ -116,6 +183,7 @@ REGLAS PARA LOS AGENTES (genera entre 5 y 7):
   * etc. — usa roles que generarán el debate más valioso para ESTA idea específica
 - La suma de pesos debe ser exactamente 1.0 (distribúyelos equitativamente entre 4-5 agentes MÁXIMO)
 - Los roles deben ser CONCRETOS y ESPECÍFICOS para el sector, no genéricos
+- NUNCA repitas el mismo rol — todos los roles deben ser únicos y representar perspectivas distintas
 - NO incluyas texto fuera del JSON"""
 
     response = await client.chat.completions.create(
@@ -127,6 +195,17 @@ REGLAS PARA LOS AGENTES (genera entre 5 y 7):
     )
 
     data = json.loads(response.choices[0].message.content)
+
+    # Deduplicar agentes por rol (conservar el primero de cada rol único)
+    vistos: set[str] = set()
+    agentes_unicos = []
+    for agente in data.get("agentes", []):
+        rol = agente.get("rol", "").strip().lower()
+        if rol not in vistos:
+            vistos.add(rol)
+            agentes_unicos.append(agente)
+    data["agentes"] = agentes_unicos
+
     resultado = ContextoDetectado(**data)
     _contexto_cache[cache_key] = (resultado, time.time())
     return resultado
@@ -282,6 +361,7 @@ DATOS REALES DEL MERCADO (fundamenta el perfil en esto):
 
 Responde ÚNICAMENTE con un JSON con esta estructura:
 {{
+  "genero": "masculino|femenino",
   "nombre": "nombre completo de UNA sola persona (sin 'y', sin 'e', sin parejas), apropiado para {contexto.pais}",
   "edad": número entero entre 25 y 55,
   "ubicacion": "ciudad, {contexto.pais}",
@@ -336,6 +416,7 @@ NO incluyas texto fuera del JSON."""
     perfil["categoria"] = agente["categoria"]
     perfil["peso"] = agente["peso"]
     perfil["tipo"] = agente["tipo"]
+    perfil["foto_url"] = await _fetch_photo(perfil.get("genero", "masculino"))
     _cache_set(cache_key, perfil)
     return perfil
 
@@ -496,6 +577,8 @@ async def generar_argumento_agente(
         "argumento": argumento,
         "posicion": posicion,
         "fuente_insight": fuente_insight,
+        "foto_url": perfil.get("foto_url", ""),
+        "genero": perfil.get("genero", "masculino"),
     }
 
 
@@ -605,12 +688,221 @@ Sé directo, máximo 3-4 oraciones. Habla en primera persona como {perfil['rol']
     return list(respuestas)
 
 
+# ── Rúbrica TBI: 60 preguntas binarias (Testing Business Ideas) ──────────────
+_RUBRICA_D1 = [
+    "¿Los entrevistados describieron el problema con sus propias palabras sin que se les sugiriera?",
+    "¿Al menos 2 perfiles distintos mencionaron la misma fricción crítica?",
+    "¿Los entrevistados ya buscan o usan alguna solución alternativa hoy?",
+    "¿El problema afecta la rutina diaria o semanal del usuario (no es ocasional)?",
+    "¿La evidencia del problema va más allá de opiniones (hay comportamiento observable)?",
+    "¿Los entrevistados expresaron frustración o incomodidad concreta con la situación actual?",
+    "¿El problema fue mencionado espontáneamente antes de que se presentara la solución?",
+    "¿Al menos un entrevistado describió haber perdido tiempo, dinero o energía por este problema?",
+    "¿El problema se presenta en múltiples situaciones o contextos (no es un caso aislado)?",
+    "¿Se identificaron al menos 3 fricciones específicas relacionadas con el problema?",
+    "¿Los entrevistados mostraron interés genuino en hablar del problema (no fue forzado)?",
+    "¿El problema se manifestó de forma similar en perfiles de distinto segmento?",
+    "¿Hay evidencia de que el problema existía antes de que el emprendedor lo propusiera?",
+    "¿Los entrevistados describieron consecuencias concretas de no resolver el problema?",
+    "¿El problema ocurre con frecuencia suficiente (al menos 1 vez por semana)?",
+]
+_RUBRICA_D2 = [
+    "¿Se identificó un segmento de cliente específico y acotado (no 'todo el mundo')?",
+    "¿Los entrevistados mostraron urgencia o frustración concreta con su situación actual?",
+    "¿Hubo al menos un entrevistado que pagó o intentó pagar por resolver este problema?",
+    "¿Los jobs-to-be-done funcional, emocional y social están identificados desde las entrevistas?",
+    "¿Al menos 3 entrevistados pertenecen claramente al segmento objetivo definido?",
+    "¿Los entrevistados tienen poder de decisión de compra (no dependen de un tercero)?",
+    "¿El segmento objetivo es suficientemente grande para representar un mercado viable?",
+    "¿Los entrevistados describieron cuánto tiempo dedican actualmente a resolver el problema?",
+    "¿Se identificaron diferencias relevantes entre subsegmentos del cliente objetivo?",
+    "¿Los entrevistados expresaron voluntad de recomendar la solución si existiera?",
+    "¿El cliente objetivo tiene acceso a los canales (digitales o físicos) que la solución requiere?",
+    "¿Los perfiles entrevistados representan variedad real (edad, contexto, nivel socioeconómico)?",
+]
+_RUBRICA_D3 = [
+    "¿La solución responde directamente al job funcional identificado en las entrevistas?",
+    "¿Existe al menos un diferenciador claro frente a las alternativas que el usuario ya usa?",
+    "¿La solución puede describirse en una oración sin necesitar explicación técnica?",
+    "¿Los supuestos críticos de implementación de la solución están identificados?",
+    "¿La solución aborda la fricción más crítica mencionada en las entrevistas?",
+    "¿La solución respeta las limitaciones culturales o contextuales del mercado local?",
+    "¿La solución puede desarrollarse en una primera versión (MVP) con recursos acotados?",
+    "¿Los entrevistados entendieron la propuesta de valor sin necesitar más de una explicación?",
+    "¿La solución genera valor sin depender de una masa crítica muy grande para funcionar?",
+    "¿Se identificaron las principales barreras de adopción de la solución?",
+    "¿La solución aborda también el job emocional (no solo el funcional)?",
+    "¿Existen precedentes de soluciones similares en otros mercados que hayan funcionado?",
+    "¿La solución puede mejorarse iterativamente con feedback real de usuarios desde el inicio?",
+]
+_RUBRICA_D4 = [
+    "¿Está claro cómo y a quién se cobrará (modelo de ingresos definido)?",
+    "¿Hay evidencia de disposición a pagar por parte del segmento objetivo?",
+    "¿Los principales costos operativos están identificados (logística, tecnología, adquisición)?",
+    "¿El modelo de ingresos puede sostenerse sin depender de inversión indefinida?",
+    "¿Existe una estrategia básica de adquisición de clientes?",
+    "¿El valor de vida del cliente es potencialmente mayor que el costo de adquirirlo?",
+    "¿El modelo puede generar ingresos desde las primeras semanas o meses de operación?",
+    "¿Se identificaron los aliados o proveedores clave necesarios para operar?",
+    "¿El modelo puede escalar sin que los costos crezcan al mismo ritmo que los ingresos?",
+    "¿Existe al menos un canal de distribución validado o altamente probable?",
+    "¿El precio estimado está dentro del rango que los entrevistados consideraron aceptable?",
+    "¿Se identificaron riesgos regulatorios o legales que puedan afectar la operación?",
+]
+_RUBRICA_D5 = [
+    "¿Se identificaron los supuestos de mayor riesgo (alto impacto + alta incertidumbre) antes de explorar?",
+    "¿Al menos uno de los supuestos más riesgosos fue explorado directamente en las entrevistas?",
+    "¿Se identificaron competidores o sustitutos directos en el mercado local?",
+    "¿Los resultados de la exploración modificaron o afinaron al menos un supuesto inicial?",
+    "¿Los supuestos fueron priorizados por nivel de impacto e incertidumbre?",
+    "¿Se ejecutó al menos un experimento para validar el supuesto más crítico?",
+    "¿El emprendedor puede identificar claramente qué aprendió nuevo gracias a la exploración?",
+    "¿La exploración generó nuevas preguntas relevantes (señal de que se llegó a profundidad real)?",
+]
+
+# Peso máximo por dimensión (suma = 100)
+_PESOS_MAX = {"d1": 30, "d2": 20, "d3": 20, "d4": 20, "d5": 10}
+
+
+async def evaluar_rubrica_tbi(
+    idea_texto: str,
+    insights_exploracion: dict | None,
+    argumentos: list,
+) -> dict:
+    """
+    Evalúa las 60 preguntas binarias de la rúbrica TBI.
+    Devuelve score_total (0-100), scores por dimensión y respuestas brutas.
+    Temperature=0 para máxima consistencia entre evaluaciones idénticas.
+    """
+    # Construir evidencia disponible
+    bloque_insights = "No se realizaron entrevistas de exploración."
+    if insights_exploracion:
+        jobs = insights_exploracion.get("jobs_principales", [])
+        jobs_str = "; ".join(
+            f"{j.get('stakeholder','')}: {j.get('job_funcional','')}" for j in jobs[:4]
+        )
+        fricciones = ", ".join(insights_exploracion.get("fricciones_criticas", [])[:4])
+        temores = ", ".join(insights_exploracion.get("temores_recurrentes", [])[:3])
+        oportunidades = ", ".join(insights_exploracion.get("oportunidades_detectadas", [])[:2])
+        competidores = insights_exploracion.get("competidores_detectados", [])
+        comp_str = ", ".join(competidores[:3]) if competidores else "no identificados"
+        total_perfiles = insights_exploracion.get("total_perfiles_entrevistados", 0)
+        validacion = insights_exploracion.get("validacion_problema", "")
+        bloque_insights = (
+            f"Resumen del problema: {insights_exploracion.get('resumen_problema', '')}\n"
+            f"Jobs principales: {jobs_str}\n"
+            f"Fricciones críticas: {fricciones}\n"
+            f"Temores recurrentes: {temores}\n"
+            f"Oportunidades detectadas: {oportunidades}\n"
+            f"Competidores/alternativas: {comp_str}\n"
+            f"Validación del problema: {validacion}\n"
+            f"Total perfiles entrevistados: {total_perfiles}\n"
+        )
+        # Supuestos evaluados
+        sups = insights_exploracion.get("supuestos_evaluados") or []
+        if sups:
+            def _fmt(lista): return "; ".join(s.get("enunciado","") for s in lista[:2])
+            validados = [s for s in sups if s.get("veredicto") == "validado"]
+            refutados  = [s for s in sups if s.get("veredicto") == "refutado"]
+            if validados: bloque_insights += f"Supuestos validados: {_fmt(validados)}\n"
+            if refutados:  bloque_insights += f"Supuestos refutados: {_fmt(refutados)}\n"
+
+    debate_resumen = "\n".join(
+        f"- {a['agente_rol']} ({a.get('posicion','neutral')}): {a['argumento'][:150]}"
+        for a in argumentos
+    )
+
+    def _fmt_preguntas(lista, dim_label):
+        lines = [f"  Dimensión {dim_label}:"]
+        for i, q in enumerate(lista, 1):
+            lines.append(f"  {i}. {q}")
+        return "\n".join(lines)
+
+    prompt = f"""Eres un evaluador experto en la metodología Testing Business Ideas (Bland & Osterwalder).
+Tu tarea es evaluar una idea de negocio usando una rúbrica binaria de 60 preguntas.
+
+IDEA DE NEGOCIO:
+{idea_texto}
+
+EVIDENCIA DE EXPLORACIÓN CON USUARIOS:
+{bloque_insights}
+
+ARGUMENTOS DEL DEBATE MULTIAGENTE:
+{debate_resumen}
+
+INSTRUCCIONES:
+- Responde cada pregunta con 1 (hay evidencia suficiente de esto) o 0 (no hay evidencia suficiente).
+- Basa tus respuestas ÚNICAMENTE en la evidencia provista arriba.
+- Si la información no menciona algo, responde 0 — no asumas ni inventes.
+- Sé estricto: el 1 requiere evidencia concreta, no suposición.
+
+PREGUNTAS (responde con arrays de enteros 0 o 1, uno por pregunta en orden):
+
+{_fmt_preguntas(_RUBRICA_D1, "D1 — Validación del problema (15 preguntas)")}
+
+{_fmt_preguntas(_RUBRICA_D2, "D2 — Validación del cliente (12 preguntas)")}
+
+{_fmt_preguntas(_RUBRICA_D3, "D3 — Viabilidad de la solución (13 preguntas)")}
+
+{_fmt_preguntas(_RUBRICA_D4, "D4 — Viabilidad del modelo de negocio (12 preguntas)")}
+
+{_fmt_preguntas(_RUBRICA_D5, "D5 — Gestión de incertidumbre (8 preguntas)")}
+
+Responde ÚNICAMENTE con este JSON (sin texto adicional):
+{{
+  "d1": [<15 valores 0 o 1>],
+  "d2": [<12 valores 0 o 1>],
+  "d3": [<13 valores 0 o 1>],
+  "d4": [<12 valores 0 o 1>],
+  "d5": [<8 valores 0 o 1>]
+}}"""
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        max_tokens=500,
+        temperature=0,
+    )
+
+    raw = json.loads(response.choices[0].message.content)
+
+    # Validar longitudes y recortar/rellenar si GPT devuelve algo incorrecto
+    esperados = {"d1": 15, "d2": 12, "d3": 13, "d4": 12, "d5": 8}
+    for dim, n in esperados.items():
+        vals = raw.get(dim, [])
+        if len(vals) < n:
+            vals = vals + [0] * (n - len(vals))
+        raw[dim] = [1 if v else 0 for v in vals[:n]]
+
+    # Calcular score ponderado en Python (100% determinista)
+    scores_dim: dict[str, float] = {}
+    score_total = 0.0
+    for dim, peso_max in _PESOS_MAX.items():
+        respuestas = raw[dim]
+        n = len(respuestas)
+        pts = sum(respuestas) * (peso_max / n)
+        scores_dim[dim] = round(pts, 2)
+        score_total += pts
+
+    score_total = round(score_total, 2)
+    nivel_confianza = round(score_total / 100, 3)
+
+    return {
+        "score_total": score_total,
+        "nivel_confianza": nivel_confianza,
+        "scores_dimension": scores_dim,
+        "respuestas": raw,
+    }
+
+
 # ── Nodo 5: Consenso ponderado y árbol de argumentos ─────────────────────────
 async def generar_consenso(
     argumentos: list,
     idea_texto: str,
     contexto: ContextoDetectado,
     session_id: str | None = None,
+    insights_exploracion: dict | None = None,
 ) -> dict:
     """
     Analiza todos los argumentos del debate, aplica los pesos
@@ -627,23 +919,15 @@ async def generar_consenso(
             f"Argumento: {arg['argumento']}\n"
         )
 
-    # Calcular score ponderado matemáticamente antes de llamar al LLM
-    score_ponderado = 0.0
-    peso_total = 0.0
-    for arg in argumentos:
-        peso = arg.get("agente_peso", 0.2)
-        posicion = arg.get("posicion", "neutral")
-        valor = 1.0 if posicion == "pro" else (0.0 if posicion == "contra" else 0.5)
-        score_ponderado += peso * valor
-        peso_total += peso
-    if peso_total > 0:
-        score_ponderado /= peso_total
-    score_ponderado = round(score_ponderado, 3)
+    # Evaluar rúbrica TBI (60 preguntas binarias) — score principal
+    rubrica = await evaluar_rubrica_tbi(idea_texto, insights_exploracion, argumentos)
+    score_rubrica = rubrica["nivel_confianza"]   # 0.0–1.0
+    scores_dim = rubrica["scores_dimension"]
 
-    # Veredicto determinista según umbrales fijos
-    if score_ponderado >= 0.65:
+    # Veredicto determinista por rúbrica (umbrales fijos, sin LLM)
+    if score_rubrica >= 0.65:
         veredicto_calculado = "viable"
-    elif score_ponderado >= 0.40:
+    elif score_rubrica >= 0.40:
         veredicto_calculado = "condicionalmente_viable"
     else:
         veredicto_calculado = "no_viable"
@@ -652,13 +936,19 @@ async def generar_consenso(
         "Eres un sintetizador experto de debates de evaluación de ideas de negocio.\n\n"
         f"IDEA EVALUADA:\n{idea_texto}\n\n"
         f"DEBATE ENTRE AGENTES ESPECIALIZADOS:\n{resumen_debate}\n\n"
-        f"SCORE PONDERADO CALCULADO (fórmula: suma(peso × valor_posicion) / suma_pesos, donde pro=1.0, neutral=0.5, contra=0.0): {score_ponderado}\n"
-        f"VEREDICTO OBLIGATORIO (derivado del score — NO lo cambies): '{veredicto_calculado}'\n"
+        f"SCORE DE RÚBRICA TBI (60 preguntas binarias — Testing Business Ideas):\n"
+        f"  Total: {rubrica['score_total']}/100 → nivel_confianza: {score_rubrica}\n"
+        f"  D1 Validación del problema: {scores_dim.get('d1',0)}/30\n"
+        f"  D2 Validación del cliente: {scores_dim.get('d2',0)}/20\n"
+        f"  D3 Viabilidad de la solución: {scores_dim.get('d3',0)}/20\n"
+        f"  D4 Viabilidad del modelo de negocio: {scores_dim.get('d4',0)}/20\n"
+        f"  D5 Gestión de incertidumbre: {scores_dim.get('d5',0)}/10\n\n"
+        f"VEREDICTO OBLIGATORIO (derivado del score de rúbrica — NO lo cambies): '{veredicto_calculado}'\n"
         f"  - score >= 0.65 → viable | 0.40–0.64 → condicionalmente_viable | < 0.40 → no_viable\n\n"
-        "INSTRUCCIÓN: El campo 'recomendacion' DEBE ser exactamente el veredicto indicado arriba. "
-        "El campo 'nivel_confianza' DEBE ser exactamente el score ponderado indicado arriba. "
+        "INSTRUCCIÓN: El campo 'recomendacion' DEBE ser exactamente el veredicto indicado. "
+        "El campo 'nivel_confianza' DEBE ser exactamente el nivel_confianza de la rúbrica. "
         "Tu tarea es generar el análisis cualitativo (acuerdos, divergencias, fortalezas, debilidades, condiciones) "
-        "que justifique ese veredicto con base en los argumentos del debate.\n\n"
+        "que justifique ese veredicto con base en los argumentos del debate y los scores por dimensión.\n\n"
         "Responde ÚNICAMENTE con un JSON con esta estructura:\n"
         "{\n"
         '  "acuerdos": [\n'
@@ -670,7 +960,7 @@ async def generar_consenso(
         '  "fortalezas_idea": ["fortaleza específica 1", "fortaleza específica 2"],\n'
         '  "debilidades_idea": ["debilidad específica 1", "debilidad específica 2"],\n'
         f'  "recomendacion": "{veredicto_calculado}",\n'
-        f'  "nivel_confianza": {score_ponderado},\n'
+        f'  "nivel_confianza": {score_rubrica},\n'
         '  "condiciones": ["condición concreta 1", "condición concreta 2"],\n'
         '  "resumen_ejecutivo": "resumen crítico del debate en 2-3 oraciones para el emprendedor"\n'
         "}"
@@ -685,7 +975,16 @@ async def generar_consenso(
     )
     _log_tokens(session_id, response, "consenso")
 
-    return json.loads(response.choices[0].message.content)
+    resultado = json.loads(response.choices[0].message.content)
+    # Adjuntar scores de rúbrica para que el frontend pueda mostrarlos si lo desea
+    resultado["rubrica"] = {
+        "score_total": rubrica["score_total"],
+        "scores_dimension": scores_dim,
+    }
+    # Garantizar que nivel_confianza y recomendacion sean los calculados
+    resultado["nivel_confianza"] = score_rubrica
+    resultado["recomendacion"] = veredicto_calculado
+    return resultado
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -864,6 +1163,7 @@ Responde ÚNICAMENTE con un JSON:
   "perfiles": [
     {{
       "variante_descripcion": "qué hace ÚNICO a este perfil respecto a los otros (ej: padre joven con recursos limitados)",
+      "genero": "masculino|femenino",
       "nombre": "nombre completo de UNA sola persona (sin 'y', sin parejas), apropiado para {pais}",
       "edad": número entero,
       "ubicacion": "nombre de una ciudad real de {pais} (ej: Lima, Arequipa, Trujillo)",
@@ -906,9 +1206,14 @@ IMPORTANTE:
     data = json.loads(response.choices[0].message.content)
     perfiles = data["perfiles"]
 
-    for p in perfiles:
+    # Asignar foto realista a cada perfil en paralelo
+    fotos = await asyncio.gather(*[
+        _fetch_photo(p.get("genero", "masculino")) for p in perfiles
+    ])
+    for p, foto in zip(perfiles, fotos):
         p["stakeholder_id"] = stakeholder.id
         p["stakeholder_nombre"] = stakeholder.nombre
+        p["foto_url"] = foto
 
     return perfiles
 

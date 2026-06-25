@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useExplorarStore, type PerfilSintetico, type Stakeholder, type InsightsJTBD } from '@/store/useExplorarStore'
 import { useSupuestosStore, type Supuesto } from '@/store/useSupuestosStore'
+import AvatarHablante from '@/components/AvatarHablante'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
 
@@ -491,7 +492,60 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
   const historial = historialPor[convKey] ?? []
   const insights  = insightsPor[convKey]
   const [pregunta, setPregunta] = useState('')
+  const [ultimaRespuesta, setUltimaRespuesta] = useState<string | undefined>()
+  const [grabando, setGrabando] = useState(false)
+  const [transcripcionInterim, setTranscripcionInterim] = useState('')
+  const [errorMic, setErrorMic] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const enviarTextoRef = useRef<(t: string) => void>(() => {})
+
+  function toggleMicrofono() {
+    setErrorMic('')
+
+    if (grabando) {
+      mediaRecorderRef.current?.stop()
+      return
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setErrorMic('Tu navegador no soporta grabación de audio.')
+      return
+    }
+
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        const chunks: BlobPart[] = []
+        const recorder = new MediaRecorder(stream)
+        mediaRecorderRef.current = recorder
+
+        recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+
+        recorder.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop())
+          setGrabando(false)
+          setTranscripcionInterim('Transcribiendo...')
+          try {
+            const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+            const form = new FormData()
+            form.append('file', blob, 'audio.webm')
+            const res = await fetch(`${API}/transcribir`, { method: 'POST', body: form })
+            const { texto } = await res.json()
+            setTranscripcionInterim('')
+            if (texto?.trim()) enviarTextoRef.current(texto.trim())
+            else setErrorMic('No se detectó voz. Intenta de nuevo.')
+          } catch {
+            setTranscripcionInterim('')
+            setErrorMic('Error al transcribir. Verifica la conexión.')
+          }
+        }
+
+        recorder.start()
+        setGrabando(true)
+        setTranscripcionInterim('')
+      })
+      .catch(() => setErrorMic('No se pudo acceder al micrófono. Verifica los permisos.'))
+  }
 
   // Supuestos activos filtrados
   const supuestosActivos = supuestos.filter(s => activosIds.includes(s.id))
@@ -500,13 +554,11 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [historial.length])
 
-  async function enviar() {
-    const texto = pregunta.trim()
+  async function enviarTexto(texto: string) {
     if (!texto || respondiendo) return
     setPregunta('')
     addMensaje(convKey, { rol: 'emprendedor', contenido: texto })
     setRespondiendo(true)
-
     try {
       const res = await fetch(`${API}/explorar/conversar`, {
         method: 'POST',
@@ -516,7 +568,6 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
           idea_texto: idea,
           historial: [...historial, { rol: 'emprendedor', contenido: texto }],
           pregunta: texto,
-          // Pasar solo campos esenciales de supuestos activos para no inflar el payload
           supuestos_activos: supuestosActivos.length > 0
             ? supuestosActivos.map(s => ({ id: s.id, enunciado: s.enunciado }))
             : null,
@@ -524,8 +575,8 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
       })
       const data = await res.json()
       addMensaje(convKey, { rol: 'perfil', contenido: data.respuesta })
+      setUltimaRespuesta(data.respuesta)
       if (data.insights_jtbd) setInsights(convKey, data.insights_jtbd)
-      // Registrar evidencia de supuestos evaluados en esta respuesta
       if (data.supuestos_evaluados?.length) {
         for (const ev of data.supuestos_evaluados) {
           registrarEvidencia(ev.supuesto_id, ev.veredicto)
@@ -538,6 +589,11 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
     }
   }
 
+  // Mantener ref siempre fresca para que el closure del reconocimiento la use
+  enviarTextoRef.current = enviarTexto
+
+  function enviar() { enviarTexto(pregunta.trim()) }
+
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() }
   }
@@ -547,9 +603,13 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
       {/* Cabecera */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 flex-shrink-0">
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-full bg-blue-700 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-            {perfil.nombre.split(' ').map(n => n[0]).join('').slice(0, 2)}
-          </div>
+          <AvatarHablante
+            fotoUrl={perfil.foto_url ?? ''}
+            genero={perfil.genero ?? 'masculino'}
+            nombre={perfil.nombre}
+            textoParaHablar={ultimaRespuesta}
+            size="md"
+          />
           <div className="flex-1 min-w-0">
             <p className="text-white font-semibold text-sm">{perfil.nombre}</p>
             <p className="text-gray-400 text-xs">{perfil.edad} años · {perfil.ocupacion} · {perfil.ubicacion}</p>
@@ -649,20 +709,44 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
       )}
 
       {/* Input */}
-      <div className="flex-shrink-0 flex gap-2">
-        <textarea
-          value={pregunta}
-          onChange={e => setPregunta(e.target.value)}
-          onKeyDown={onKeyDown}
-          disabled={respondiendo}
-          placeholder="Pregunta algo... (Enter para enviar)"
-          rows={2}
-          className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-white placeholder-gray-500 text-sm resize-none focus:outline-none focus:border-blue-600 transition disabled:opacity-50"
-        />
-        <button onClick={enviar} disabled={!pregunta.trim() || respondiendo}
-          className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 rounded-xl transition text-sm font-medium">
-          →
-        </button>
+      <div className="flex-shrink-0 space-y-1.5">
+        {/* Estado del micrófono */}
+        {(grabando || transcripcionInterim) && (
+          <p className="text-red-400 text-xs px-1 truncate">
+            🎤 {transcripcionInterim || 'Grabando... da click para detener'}
+          </p>
+        )}
+        {errorMic && (
+          <p className="text-yellow-400 text-xs px-1">{errorMic}</p>
+        )}
+        <div className="flex gap-2">
+          <textarea
+            value={pregunta}
+            onChange={e => setPregunta(e.target.value)}
+            onKeyDown={onKeyDown}
+            disabled={respondiendo || grabando}
+            placeholder={grabando ? 'Grabando voz...' : 'Pregunta algo... (Enter para enviar)'}
+            rows={2}
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-white placeholder-gray-500 text-sm resize-none focus:outline-none focus:border-blue-600 transition disabled:opacity-50"
+          />
+          {/* Botón micrófono */}
+          <button
+            onClick={toggleMicrofono}
+            disabled={respondiendo}
+            title={grabando ? 'Detener grabación' : 'Grabar pregunta'}
+            className={`flex-shrink-0 w-11 rounded-xl transition flex items-center justify-center text-lg
+              ${grabando
+                ? 'bg-red-600 hover:bg-red-500 animate-pulse'
+                : 'bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed'
+              }`}
+          >
+            🎤
+          </button>
+          <button onClick={enviar} disabled={!pregunta.trim() || respondiendo || grabando}
+            className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 rounded-xl transition text-sm font-medium">
+            →
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -680,6 +764,7 @@ export default function ExplorarPage() {
     setStakeholders, setCargandoStakeholders,
     setStakeholderActivo, setPerfilActivoIdx,
     setErrorStakeholders, setSintesis, setCargandoSintesis, setErrorSintesis,
+    setSnapshotExploracion,
   } = useExplorarStore()
 
   const { supuestos, activosIds } = useSupuestosStore()
@@ -763,6 +848,46 @@ export default function ExplorarPage() {
       if (!res.ok) throw new Error(`Error del servidor: ${res.status}`)
       const data = await res.json()
       setSintesis(data)
+
+      // Guardar snapshot de conversaciones para el historial
+      const snap = {
+        stakeholders: sks.map(sk => ({
+          stakeholder_id: sk.id,
+          stakeholder_nombre: sk.nombre,
+          descripcion: sk.descripcion,
+          relevancia: sk.relevancia,
+          tipo: sk.tipo,
+          preguntas_clave: sk.preguntas_clave,
+          perfiles: (perfSeg[sk.id] ?? [])
+            .map((p, idx) => {
+              const key = `${sk.id}::${idx}`
+              return {
+                stakeholder_id: sk.id,
+                stakeholder_nombre: sk.nombre,
+                nombre: p.nombre,
+                edad: p.edad,
+                ubicacion: p.ubicacion,
+                ocupacion: p.ocupacion,
+                variante_descripcion: p.variante_descripcion ?? '',
+                autopercepcion: p.autopercepcion ?? '',
+                creencias_centrales: p.creencias_centrales ?? [],
+                miedo_oculto: p.miedo_oculto ?? '',
+                job_funcional: p.job_funcional,
+                job_emocional: p.job_emocional,
+                job_social: p.job_social,
+                fricciones: p.fricciones ?? [],
+                temores: p.temores ?? [],
+                resultado_deseado: p.resultado_deseado ?? '',
+                foto_url: p.foto_url,
+                genero: p.genero,
+                historial: histSeg[key] ?? [],
+                insights: insSeg[key] ?? null,
+              }
+            }),
+        })),
+      }
+      setSnapshotExploracion(snap)
+
       router.push('/sintesis')
     } catch (e: unknown) {
       setErrorSintesis(e instanceof Error ? e.message : 'Error al sintetizar')
