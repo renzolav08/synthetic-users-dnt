@@ -6,12 +6,20 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  transpilePackages: ['simli-client'],
   webpack: (config, { isServer }) => {
     if (isServer) {
+      // En el servidor ignorar simli-client (browser-only)
       config.resolve.alias = {
         ...config.resolve.alias,
         'simli-client': false,
+      }
+    } else {
+      // En el cliente, proveer require como no-op para que simli-client no rompa
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
       }
     }
     return config
