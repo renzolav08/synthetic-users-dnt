@@ -6,9 +6,9 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  transpilePackages: ['simli-client'],
   webpack: (config, { isServer }) => {
     if (isServer) {
-      // En el servidor, reemplazar simli-client con módulo vacío (browser-only)
       config.resolve.alias = {
         ...config.resolve.alias,
         'simli-client': false,
