@@ -1,5 +1,3 @@
-import webpack from 'webpack'
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   eslint: {
@@ -8,7 +6,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, webpack }) => {
     if (isServer) {
       config.resolve.alias = {
         ...config.resolve.alias,
@@ -16,7 +14,6 @@ const nextConfig = {
       }
     } else {
       // Fix: simli-client require('./Client') falla en Linux (case-sensitive)
-      // El archivo real es './client' (minúscula)
       config.plugins.push(
         new webpack.NormalModuleReplacementPlugin(
           /^\.\/Client$/,
