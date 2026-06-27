@@ -1,3 +1,5 @@
+import webpack from 'webpack'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   eslint: {
@@ -8,19 +10,23 @@ const nextConfig = {
   },
   webpack: (config, { isServer }) => {
     if (isServer) {
-      // En el servidor ignorar simli-client (browser-only)
       config.resolve.alias = {
         ...config.resolve.alias,
         'simli-client': false,
       }
     } else {
-      // En el cliente, proveer require como no-op para que simli-client no rompa
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-      }
+      // Fix: simli-client require('./Client') falla en Linux (case-sensitive)
+      // El archivo real es './client' (minúscula)
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(
+          /^\.\/Client$/,
+          (resource) => {
+            if (resource.context && resource.context.includes('simli-client')) {
+              resource.request = './client'
+            }
+          }
+        )
+      )
     }
     return config
   },
