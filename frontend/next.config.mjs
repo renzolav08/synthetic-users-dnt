@@ -6,7 +6,9 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  serverExternalPackages: ['simli-client'],
+  experimental: {
+    serverComponentsExternalPackages: ['simli-client'],
+  },
   async redirects() {
     return [
       {
