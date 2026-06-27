@@ -48,43 +48,8 @@ export default function AvatarHablante({
 
   const dim = { sm: 'w-12 h-12', md: 'w-16 h-16', lg: 'w-24 h-24' }[size]
 
-  // Intentar conectar Simli (falla silenciosamente si no está disponible)
-  useEffect(() => {
-    if (!SIMLI_KEY || typeof window === 'undefined') return
-
-    let destroyed = false
-
-    async function init() {
-      try {
-        const { SimliClient } = await import('simli-client')
-        if (destroyed) return
-
-        const simli = new SimliClient()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        simli.Initialize({
-          apiKey: SIMLI_KEY,
-          faceID: FACE_ID,
-          handleSilence: true,
-          videoRef: videoRef,
-          audioRef: audioSimliRef,
-        } as any)
-
-        simliRef.current = simli
-        await simli.start()
-        if (!destroyed) setSimliConectado(true)
-      } catch {
-        // Simli no disponible — solo muestra foto + reproduce audio WAV directamente
-      }
-    }
-
-    init()
-
-    return () => {
-      destroyed = true
-      try { simliRef.current?.close() } catch { /* ignorar si aún conectando */ }
-      setSimliConectado(false)
-    }
-  }, [])
+  // Simli deshabilitado en AvatarHablante — usar LlamadaExploracion para videollamadas
+  useEffect(() => { setSimliConectado(false) }, [])
 
   // Hablar cuando llega nuevo texto
   useEffect(() => {

@@ -19,8 +19,12 @@ const LABEL_VEREDICTO: Record<string, string> = {
 export default function HistorialPage() {
   const router = useRouter()
   const { reset: resetDebate } = useDebateStore()
-  const { idea: ideaActiva, restaurarDesdeSnapshot, reset: resetExplorar, setIdea } = useExplorarStore()
+  const { idea: ideaActiva, stakeholders, historialPor, restaurarDesdeSnapshot, reset: resetExplorar, setIdea } = useExplorarStore()
   const { entradas, limpiar } = useHistorialStore()
+
+  // Sesión activa = hay idea + stakeholders cargados en el store
+  const mensajesEnSesion = Object.values(historialPor).reduce((s, h) => s + h.length, 0)
+  const sesionActiva = !!ideaActiva && stakeholders.length > 0
 
   function formatFecha(iso: string) {
     try {
@@ -69,6 +73,33 @@ export default function HistorialPage() {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-8">
+
+        {/* Sesión en progreso */}
+        {sesionActiva && (
+          <div className="mb-6 bg-blue-950/50 border border-blue-700 rounded-xl p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                  <p className="text-blue-300 text-xs font-semibold uppercase tracking-wider">Exploración en progreso</p>
+                </div>
+                <p className="text-white text-sm leading-relaxed">
+                  {ideaActiva.length > 120 ? ideaActiva.slice(0, 120) + '…' : ideaActiva}
+                </p>
+                <p className="text-gray-500 text-xs mt-1.5">
+                  {stakeholders.length} segmento{stakeholders.length !== 1 ? 's' : ''} · {mensajesEnSesion} mensaje{mensajesEnSesion !== 1 ? 's' : ''} registrados
+                </p>
+              </div>
+              <button
+                onClick={() => router.push('/explorar')}
+                className="flex-shrink-0 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+              >
+                Retomar →
+              </button>
+            </div>
+          </div>
+        )}
+
         {entradas.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-gray-400 text-sm">Aún no hay debates guardados.</p>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useDebateStore } from '@/store/useDebateStore'
 import { useExplorarStore } from '@/store/useExplorarStore'
 import { useSupuestosStore } from '@/store/useSupuestosStore'
@@ -22,9 +22,45 @@ export default function Home() {
   const [texto, setTexto] = useState('')
   const [pais, setPais] = useState('Perú')
   const [detectandoPais, setDetectandoPais] = useState(true)
+  const [grabando, setGrabando] = useState(false)
+  const [transcribiendo, setTranscribiendo] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+
+  const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
+
+  function toggleMic() {
+    if (grabando) { mediaRecorderRef.current?.stop(); return }
+    if (!navigator.mediaDevices?.getUserMedia) return
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        const chunks: BlobPart[] = []
+        const rec = new MediaRecorder(stream)
+        mediaRecorderRef.current = rec
+        rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+        rec.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop())
+          setGrabando(false)
+          setTranscribiendo(true)
+          try {
+            const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
+            const form = new FormData()
+            form.append('file', blob, 'audio.webm')
+            const r = await fetch(`${API}/transcribir`, { method: 'POST', body: form })
+            const { texto: transcrito } = await r.json()
+            if (transcrito?.trim()) setTexto(prev => prev ? prev + ' ' + transcrito.trim() : transcrito.trim())
+          } catch { /* ignorar */ }
+          finally { setTranscribiendo(false) }
+        }
+        rec.start()
+        setGrabando(true)
+      })
+      .catch(() => {})
+  }
   const { estado, setEstado } = useDebateStore()
   const explorarStore = useExplorarStore()
   const supuestosStore = useSupuestosStore()
+  const sesionActiva = !!explorarStore.idea && explorarStore.stakeholders.length > 0
+  const mensajesEnSesion = Object.values(explorarStore.historialPor).reduce((s, h) => s + h.length, 0)
   const router = useRouter()
   const cargando = false
 
@@ -78,14 +114,41 @@ export default function Home() {
           Cuéntanos tu idea de negocio
         </label>
 
-        <textarea
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          disabled={cargando}
-          placeholder="Ej: Quiero crear una app que conecte a dueños de bodegas con proveedores mayoristas para hacer pedidos directos sin intermediarios..."
-          rows={6}
-          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 resize-none focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition disabled:opacity-50 text-sm leading-relaxed"
-        />
+        <div className="relative">
+          <textarea
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            disabled={cargando}
+            placeholder={grabando ? '🎤 Grabando... da click al micrófono para terminar' : transcribiendo ? 'Transcribiendo...' : 'Ej: Quiero crear una app que conecte a dueños de bodegas con proveedores mayoristas para hacer pedidos directos sin intermediarios...'}
+            rows={6}
+            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 pr-14 text-white placeholder-gray-500 resize-none focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition disabled:opacity-50 text-sm leading-relaxed"
+          />
+          <button
+            type="button"
+            onClick={toggleMic}
+            disabled={transcribiendo}
+            title={grabando ? 'Detener grabación' : 'Dictar idea por voz'}
+            className={`absolute bottom-3 right-3 w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+              grabando
+                ? 'bg-red-600 hover:bg-red-500 animate-pulse shadow-lg shadow-red-900/50'
+                : transcribiendo
+                ? 'bg-gray-600 opacity-60 cursor-not-allowed'
+                : 'bg-gray-700 hover:bg-gray-600'
+            }`}
+          >
+            {transcribiendo ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                {grabando ? (
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                ) : (
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zm-1 14.93A7 7 0 0 1 5 9H3a9 9 0 0 0 8 8.94V21H9v2h6v-2h-2v-2.07A9 9 0 0 0 21 9h-2a7 7 0 0 1-6 6.93z"/>
+                )}
+              </svg>
+            )}
+          </button>
+        </div>
 
         {/* Selector de país */}
         <div className="flex items-center gap-2 mt-3 mb-1">
@@ -137,16 +200,32 @@ export default function Home() {
             Paso 1: entrevistas · Paso 2: síntesis · Paso 3: debate multiagente
           </p>
         )}
+
+        {/* Sesión en progreso */}
+        {sesionActiva && (
+          <div className="mt-4 bg-blue-950/40 border border-blue-800 rounded-xl p-4 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
+                <p className="text-blue-300 text-xs font-semibold">Exploración en progreso</p>
+              </div>
+              <p className="text-gray-400 text-xs truncate">
+                {explorarStore.idea.slice(0, 80)}{explorarStore.idea.length > 80 ? '…' : ''}
+              </p>
+              <p className="text-gray-600 text-xs mt-0.5">
+                {explorarStore.stakeholders.length} segmentos · {mensajesEnSesion} mensajes
+              </p>
+            </div>
+            <button
+              onClick={() => router.push('/explorar')}
+              className="flex-shrink-0 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition"
+            >
+              Retomar →
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Agentes info */}
-      <div className="mt-8 flex flex-wrap justify-center gap-2">
-        {['Usuario Objetivo', 'Analista de Negocio', 'Experto Técnico', 'Analista de Contexto', 'Analista de Riesgos'].map((rol) => (
-          <span key={rol} className="bg-gray-900 border border-gray-800 text-gray-400 text-xs px-3 py-1.5 rounded-full">
-            {rol}
-          </span>
-        ))}
-      </div>
 
       {/* Link al historial */}
       <div className="mt-6">

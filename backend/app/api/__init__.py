@@ -36,10 +36,15 @@ async def endpoint_transcribir(file: UploadFile = File(...)):
     """Transcribe audio usando OpenAI Whisper. Acepta webm/mp4/ogg/wav."""
     from app.services import client
     audio_bytes = await file.read()
+    # Rechazar audio demasiado corto — probablemente silencio o ruido
+    if len(audio_bytes) < 4000:
+        return {"texto": ""}
+
     response = await client.audio.transcriptions.create(
         model="whisper-1",
         file=(file.filename or "audio.webm", audio_bytes, file.content_type or "audio/webm"),
         language="es",
+        prompt="Conversación en español latinoamericano sobre ideas de negocio, startups y validación de mercado con usuarios reales.",
     )
     return {"texto": response.text}
 
@@ -55,7 +60,7 @@ async def endpoint_tts(body: dict):
     if not texto:
         return {"audio_base64": "", "sample_rate": 16000}
 
-    voz_map = {"femenino": "nova", "masculino": "echo"}
+    voz_map = {"femenino": "shimmer", "masculino": "onyx"}
     voz = voz_map.get(genero, "alloy")
 
     pcm, wav = await generar_audio_tts(texto, voz)

@@ -181,7 +181,7 @@ REGLAS PARA LOS AGENTES (genera entre 5 y 7):
   * construcción → contratista, propietario, inspector
   * turismo → viajero, operador turístico, gestor local
   * etc. — usa roles que generarán el debate más valioso para ESTA idea específica
-- La suma de pesos debe ser exactamente 1.0 (distribúyelos equitativamente entre 4-5 agentes MÁXIMO)
+- La suma de pesos debe ser exactamente 1.0 (distribúyelos equitativamente entre 4-5 agentes MÁXIMO, nunca más de 5)
 - Los roles deben ser CONCRETOS y ESPECÍFICOS para el sector, no genéricos
 - NUNCA repitas el mismo rol — todos los roles deben ser únicos y representar perspectivas distintas
 - NO incluyas texto fuera del JSON"""
@@ -204,7 +204,7 @@ REGLAS PARA LOS AGENTES (genera entre 5 y 7):
         if rol not in vistos:
             vistos.add(rol)
             agentes_unicos.append(agente)
-    data["agentes"] = agentes_unicos
+    data["agentes"] = agentes_unicos[:5]
 
     resultado = ContextoDetectado(**data)
     _contexto_cache[cache_key] = (resultado, time.time())
@@ -776,18 +776,21 @@ async def evaluar_rubrica_tbi(
     """
     # Construir evidencia disponible
     bloque_insights = "No se realizaron entrevistas de exploración."
+    confianza_exploracion = None
     if insights_exploracion:
         jobs = insights_exploracion.get("jobs_principales", [])
         jobs_str = "; ".join(
-            f"{j.get('stakeholder','')}: {j.get('job_funcional','')}" for j in jobs[:4]
+            f"{j.get('stakeholder','')}: {j.get('job_funcional','')} (dolor: {j.get('dolor_asociado','')})"
+            for j in jobs[:8]
         )
-        fricciones = ", ".join(insights_exploracion.get("fricciones_criticas", [])[:4])
-        temores = ", ".join(insights_exploracion.get("temores_recurrentes", [])[:3])
-        oportunidades = ", ".join(insights_exploracion.get("oportunidades_detectadas", [])[:2])
+        fricciones = ", ".join(insights_exploracion.get("fricciones_criticas", [])[:6])
+        temores = ", ".join(insights_exploracion.get("temores_recurrentes", [])[:5])
+        oportunidades = ", ".join(insights_exploracion.get("oportunidades_detectadas", [])[:4])
         competidores = insights_exploracion.get("competidores_detectados", [])
-        comp_str = ", ".join(competidores[:3]) if competidores else "no identificados"
+        comp_str = ", ".join(competidores[:5]) if competidores else "no identificados"
         total_perfiles = insights_exploracion.get("total_perfiles_entrevistados", 0)
         validacion = insights_exploracion.get("validacion_problema", "")
+        confianza_exploracion = insights_exploracion.get("nivel_confianza")
         bloque_insights = (
             f"Resumen del problema: {insights_exploracion.get('resumen_problema', '')}\n"
             f"Jobs principales: {jobs_str}\n"
@@ -798,17 +801,21 @@ async def evaluar_rubrica_tbi(
             f"Validación del problema: {validacion}\n"
             f"Total perfiles entrevistados: {total_perfiles}\n"
         )
-        # Supuestos evaluados
+        if confianza_exploracion is not None:
+            bloque_insights += f"Nivel de confianza de la exploración con usuarios: {round(confianza_exploracion*100)}%\n"
+        # Supuestos evaluados — todos
         sups = insights_exploracion.get("supuestos_evaluados") or []
         if sups:
-            def _fmt(lista): return "; ".join(s.get("enunciado","") for s in lista[:2])
+            def _fmt(lista): return "; ".join(s.get("enunciado","") for s in lista[:4])
             validados = [s for s in sups if s.get("veredicto") == "validado"]
             refutados  = [s for s in sups if s.get("veredicto") == "refutado"]
-            if validados: bloque_insights += f"Supuestos validados: {_fmt(validados)}\n"
-            if refutados:  bloque_insights += f"Supuestos refutados: {_fmt(refutados)}\n"
+            parciales  = [s for s in sups if s.get("veredicto") == "parcial"]
+            if validados: bloque_insights += f"Supuestos validados ({len(validados)}): {_fmt(validados)}\n"
+            if parciales: bloque_insights += f"Supuestos parcialmente validados ({len(parciales)}): {_fmt(parciales)}\n"
+            if refutados:  bloque_insights += f"Supuestos refutados ({len(refutados)}): {_fmt(refutados)}\n"
 
     debate_resumen = "\n".join(
-        f"- {a['agente_rol']} ({a.get('posicion','neutral')}): {a['argumento'][:150]}"
+        f"- {a['agente_rol']} ({a.get('posicion','neutral')}): {a['argumento'][:400]}"
         for a in argumentos
     )
 
@@ -818,6 +825,21 @@ async def evaluar_rubrica_tbi(
             lines.append(f"  {i}. {q}")
         return "\n".join(lines)
 
+    bloque_contexto_confianza = ""
+    if confianza_exploracion is not None:
+        pct = round(confianza_exploracion * 100)
+        if pct >= 60:
+            bloque_contexto_confianza = (
+                f"\nNOTA IMPORTANTE: La fase de exploración con usuarios reales arrojó {pct}% de confianza, "
+                "lo que indica evidencia sólida de problema y demanda. Esto es evidencia válida para las dimensiones "
+                "D1 (validación del problema) y D2 (validación del cliente).\n"
+            )
+        elif pct >= 40:
+            bloque_contexto_confianza = (
+                f"\nNOTA: La fase de exploración arrojó {pct}% de confianza (nivel medio). "
+                "Hay evidencia parcial de problema validado.\n"
+            )
+
     prompt = f"""Eres un evaluador experto en la metodología Testing Business Ideas (Bland & Osterwalder).
 Tu tarea es evaluar una idea de negocio usando una rúbrica binaria de 60 preguntas.
 
@@ -826,15 +848,16 @@ IDEA DE NEGOCIO:
 
 EVIDENCIA DE EXPLORACIÓN CON USUARIOS:
 {bloque_insights}
-
+{bloque_contexto_confianza}
 ARGUMENTOS DEL DEBATE MULTIAGENTE:
 {debate_resumen}
 
 INSTRUCCIONES:
-- Responde cada pregunta con 1 (hay evidencia suficiente de esto) o 0 (no hay evidencia suficiente).
-- Basa tus respuestas ÚNICAMENTE en la evidencia provista arriba.
-- Si la información no menciona algo, responde 0 — no asumas ni inventes.
-- Sé estricto: el 1 requiere evidencia concreta, no suposición.
+- Responde cada pregunta con 1 (hay evidencia razonable de esto) o 0 (no hay evidencia ni indicios).
+- Basa tus respuestas en toda la evidencia provista: exploración con usuarios, argumentos del debate y la idea misma.
+- Si la evidencia menciona el tema de forma implícita o hay indicios razonables, responde 1.
+- Responde 0 solo cuando no hay absolutamente ninguna evidencia ni mención del tema.
+- La exploración con usuarios es evidencia de primera mano: úsala para responder D1 y D2.
 
 PREGUNTAS (responde con arrays de enteros 0 o 1, uno por pregunta en orden):
 

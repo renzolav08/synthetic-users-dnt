@@ -6,6 +6,17 @@ import { useRouter } from 'next/navigation'
 import { useExplorarStore, type PerfilSintetico, type Stakeholder, type InsightsJTBD } from '@/store/useExplorarStore'
 import { useSupuestosStore, type Supuesto } from '@/store/useSupuestosStore'
 import AvatarHablante from '@/components/AvatarHablante'
+import LlamadaExploracion from '@/components/LlamadaExploracion'
+
+// Imagen del avatar Simli según género (si está configurado)
+const SIMLI_IMG_F = process.env.NEXT_PUBLIC_SIMLI_IMG_F ?? ''
+const SIMLI_IMG_M = process.env.NEXT_PUBLIC_SIMLI_IMG_M ?? ''
+function avatarFoto(perfil: PerfilSintetico): string {
+  if (SIMLI_IMG_F || SIMLI_IMG_M) {
+    return perfil.genero === 'masculino' ? (SIMLI_IMG_M || perfil.foto_url || '') : (SIMLI_IMG_F || perfil.foto_url || '')
+  }
+  return perfil.foto_url || ''
+}
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
 
@@ -234,10 +245,11 @@ function StakeholderCard({ sk, activo, onClick }: { sk: Stakeholder; activo: boo
 
 // ─── Panel central: perfiles de un stakeholder ───────────────────────────────
 function PerfilesPanel({
-  stakeholder, idea, sector, pais, perfilActivoIdx, onSelectPerfil,
+  stakeholder, idea, sector, pais, perfilActivoIdx, onSelectPerfil, onLlamar,
 }: {
   stakeholder: Stakeholder; idea: string; sector: string; pais: string
   perfilActivoIdx: number | null; onSelectPerfil: (idx: number) => void
+  onLlamar: (perfil: PerfilSintetico, convKey: string) => void
 }) {
   const { perfilesPor, cargandoPerfilesPor, setPerfilesPor, appendPerfilesPor,
           setCargandoPerfilesPor, patronesPor, cargandoPatronesPor, setPatronesPor,
@@ -419,26 +431,36 @@ function PerfilesPanel({
           const mensajes = historialPor[convKey] ?? []
           const seleccionado = perfilActivoIdx === idx
           return (
-            <button key={idx} onClick={() => onSelectPerfil(idx)}
-              className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-                seleccionado ? 'bg-blue-950 border-blue-600' : 'bg-gray-900 border-gray-800 hover:border-gray-600'
-              }`}>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-white font-medium text-sm">{perfil.nombre}</p>
-                  <p className="text-gray-400 text-xs">{perfil.edad} años · {perfil.ocupacion}</p>
+            <div key={idx} className={`rounded-xl border transition-all duration-200 ${
+              seleccionado ? 'bg-blue-950 border-blue-600' : 'bg-gray-900 border-gray-800 hover:border-gray-600'
+            }`}>
+              <button className="w-full text-left p-4" onClick={() => onSelectPerfil(idx)}>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-white font-medium text-sm">{perfil.nombre}</p>
+                    <p className="text-gray-400 text-xs">{perfil.edad} años · {perfil.ocupacion}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    {tieneInsights && (
+                      <span className="text-xs bg-green-900/50 border border-green-700 text-green-300 px-2 py-0.5 rounded-full">insights ✓</span>
+                    )}
+                    {mensajes.length > 0 && (
+                      <span className="text-xs text-gray-500">{Math.floor(mensajes.length / 2)} preguntas</span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                  {tieneInsights && (
-                    <span className="text-xs bg-green-900/50 border border-green-700 text-green-300 px-2 py-0.5 rounded-full">insights ✓</span>
-                  )}
-                  {mensajes.length > 0 && (
-                    <span className="text-xs text-gray-500">{Math.floor(mensajes.length / 2)} preguntas</span>
-                  )}
-                </div>
+                <p className="text-blue-300 text-xs mt-2 italic">"{perfil.variante_descripcion}"</p>
+              </button>
+              {/* Botón llamada */}
+              <div className="px-4 pb-3">
+                <button
+                  onClick={() => onLlamar(perfil, convKey)}
+                  className="w-full flex items-center justify-center gap-2 bg-green-700 hover:bg-green-600 text-white text-xs font-medium py-2 rounded-lg transition"
+                >
+                  <span>📞</span> Iniciar videollamada
+                </button>
               </div>
-              <p className="text-blue-300 text-xs mt-2 italic">"{perfil.variante_descripcion}"</p>
-            </button>
+            </div>
           )
         })}
       </div>
@@ -603,13 +625,11 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
       {/* Cabecera */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 flex-shrink-0">
         <div className="flex items-start gap-3">
-          <AvatarHablante
-            fotoUrl={perfil.foto_url ?? ''}
-            genero={perfil.genero ?? 'masculino'}
-            nombre={perfil.nombre}
-            textoParaHablar={ultimaRespuesta}
-            size="md"
-          />
+          <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 border border-gray-600">
+            <span className="text-sm font-bold text-gray-300 select-none">
+              {perfil.nombre.split(' ').slice(0, 2).map((n: string) => n[0]).join('').toUpperCase()}
+            </span>
+          </div>
           <div className="flex-1 min-w-0">
             <p className="text-white font-semibold text-sm">{perfil.nombre}</p>
             <p className="text-gray-400 text-xs">{perfil.edad} años · {perfil.ocupacion} · {perfil.ubicacion}</p>
@@ -764,11 +784,16 @@ export default function ExplorarPage() {
     setStakeholders, setCargandoStakeholders,
     setStakeholderActivo, setPerfilActivoIdx,
     setErrorStakeholders, setSintesis, setCargandoSintesis, setErrorSintesis,
-    setSnapshotExploracion,
+    setSnapshotExploracion, addMensaje, setInsights,
   } = useExplorarStore()
 
-  const { supuestos, activosIds } = useSupuestosStore()
+  const { supuestos, activosIds, registrarEvidencia } = useSupuestosStore()
   const stakeholders = _stakeholders ?? []
+
+  // Estado de videollamada activa
+  const [llamadaActiva, setLlamadaActiva] = useState<{
+    perfil: PerfilSintetico; convKey: string
+  } | null>(null)
 
   useEffect(() => {
     if (!idea) router.replace('/')
@@ -1020,7 +1045,8 @@ export default function ExplorarPage() {
         <div className="w-80 flex-shrink-0 border-r border-gray-800 overflow-y-auto p-4">
           {skActivo ? (
             <PerfilesPanel stakeholder={skActivo} idea={idea} sector={sector} pais={pais}
-              perfilActivoIdx={perfilActivoIdx} onSelectPerfil={idx => setPerfilActivoIdx(idx)} />
+              perfilActivoIdx={perfilActivoIdx} onSelectPerfil={idx => setPerfilActivoIdx(idx)}
+              onLlamar={(perfil, convKey) => setLlamadaActiva({ perfil, convKey })} />
           ) : (
             <div className="flex items-center justify-center h-full">
               <p className="text-gray-600 text-sm text-center">Selecciona un stakeholder<br />para ver sus perfiles</p>
@@ -1044,6 +1070,19 @@ export default function ExplorarPage() {
         </div>
       </div>
     </main>
+
+    {/* Videollamada overlay */}
+    {llamadaActiva && (
+      <LlamadaExploracion
+        perfil={llamadaActiva.perfil}
+        convKey={llamadaActiva.convKey}
+        idea={idea}
+        supuestosActivos={supuestos.filter(s => activosIds.includes(s.id)).map(s => ({ id: s.id, enunciado: s.enunciado }))}
+        onInsights={(ins) => setInsights(llamadaActiva.convKey, ins as Parameters<typeof setInsights>[1])}
+        onSupuestosEvaluados={(evs) => { for (const ev of evs) registrarEvidencia(ev.supuesto_id, ev.veredicto as 'validado' | 'parcial' | 'refutado') }}
+        onColgar={() => setLlamadaActiva(null)}
+      />
+    )}
     </div>
   )
 }
