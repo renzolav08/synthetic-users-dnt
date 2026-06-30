@@ -1,6 +1,9 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import Depends
 from app.schemas import IdeaInput, ContextoDetectado, ConversacionInput, PatronesInput, SintesisInput, EncuestaInput, ReplicaInput
+from app.auth import authenticate_user, create_access_token
 from app.services import (
     detectar_contexto,
     generar_replica_agentes,
@@ -24,6 +27,36 @@ import asyncio
 import uuid
 
 router = APIRouter()
+
+
+@router.post("/auth/login")
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Email o contraseña incorrectos")
+    token = create_access_token({"sub": user["email"], "nombre": user["nombre"]})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "nombre": user["nombre"],
+        "email": user["email"],
+    }
+
+
+@router.post("/auth/verify")
+async def verify_token(token_data: dict):
+    from app.auth import get_current_user, oauth2_scheme
+    from jose import JWTError, jwt
+    from app.auth import SECRET_KEY, ALGORITHM, USERS
+    try:
+        payload = jwt.decode(token_data.get("token", ""), SECRET_KEY, algorithms=[ALGORITHM])
+        email = payload.get("sub")
+        user = USERS.get(email)
+        if not user:
+            raise HTTPException(status_code=401, detail="Token inválido")
+        return {"valid": True, "nombre": user["nombre"], "email": user["email"]}
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
 
 @router.get("/health")
