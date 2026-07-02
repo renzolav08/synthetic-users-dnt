@@ -137,12 +137,15 @@ export default function LlamadaExploracion({
   const amplitudRef = useRef(0)
   const [grabando, setGrabando] = useState(false)
   const [transcribiendo, setTranscribiendo] = useState(false)
+  const [errorMic, setErrorMic] = useState('')
   const [subtitulo, setSubtitulo] = useState('')
   const [subtituloUsuario, setSubtituloUsuario] = useState('')
   const [duracionLlamada, setDuracionLlamada] = useState(0)
   const [camaraActiva, setCamaraActiva] = useState(false)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null)
   const camaraStreamRef = useRef<MediaStream | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const colgadoRef = useRef(false)
@@ -296,13 +299,61 @@ export default function LlamadaExploracion({
   enviarRef.current = enviarMensaje
 
   function toggleMic() {
+    setErrorMic('')
+
+    // — Si ya está grabando, detener —
     if (grabando) {
       beep('fin')
-      mediaRecorderRef.current?.stop()
+      // Detener Web Speech si está activo
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+        recognitionRef.current = null
+      } else {
+        mediaRecorderRef.current?.stop()
+      }
       return
     }
+
     if (hablando) return
-    if (!navigator.mediaDevices?.getUserMedia) return
+
+    // — Intentar Web Speech API primero (Chrome/Edge nativo, sin backend) —
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (SpeechRecognition) {
+      const rec = new SpeechRecognition()
+      rec.lang = 'es-PE'
+      rec.continuous = false
+      rec.interimResults = false
+      recognitionRef.current = rec
+
+      rec.onstart = () => { beep('inicio'); setGrabando(true) }
+
+      rec.onresult = (e: any) => {
+        const texto = Array.from(e.results as any[])
+          .map((r: any) => r[0].transcript)
+          .join(' ')
+          .trim()
+        if (texto) enviarRef.current(texto)
+      }
+
+      rec.onerror = (e: any) => {
+        if (e.error !== 'aborted') setErrorMic('Error de micrófono: ' + e.error)
+      }
+
+      rec.onend = () => {
+        recognitionRef.current = null
+        setGrabando(false)
+      }
+
+      rec.start()
+      return
+    }
+
+    // — Fallback: MediaRecorder + Whisper —
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setErrorMic('Tu navegador no soporta grabación de audio.')
+      return
+    }
 
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then(stream => {
@@ -322,16 +373,21 @@ export default function LlamadaExploracion({
             const form = new FormData()
             form.append('file', blob, 'audio.webm')
             const r = await fetch(`${API}/transcribir`, { method: 'POST', body: form })
+            if (!r.ok) throw new Error(`HTTP ${r.status}`)
             const { texto } = await r.json()
             if (texto?.trim()) enviarRef.current(texto.trim())
-          } catch { /* ignorar */ }
-          finally { setTranscribiendo(false) }
+            else setErrorMic('No se detectó voz. Intenta de nuevo.')
+          } catch (e) {
+            setErrorMic('Error al transcribir: ' + (e instanceof Error ? e.message : 'desconocido'))
+          } finally {
+            setTranscribiendo(false)
+          }
         }
 
         rec.start()
         setGrabando(true)
       })
-      .catch(() => {})
+      .catch(() => setErrorMic('No se pudo acceder al micrófono.'))
   }
 
   function toggleCamara() {
@@ -363,6 +419,7 @@ export default function LlamadaExploracion({
     colgadoRef.current = true
     abortRef.current?.abort()
     if (audioActivo) { audioActivo.pause(); audioActivo = null }
+    if (recognitionRef.current) { try { recognitionRef.current.stop() } catch { /**/ }; recognitionRef.current = null }
     mediaRecorderRef.current?.stop()
     camaraStreamRef.current?.getTracks().forEach(t => t.stop())
     onColgar()
@@ -508,6 +565,14 @@ export default function LlamadaExploracion({
           {transcribiendo && (
             <div className="absolute top-6 left-4 right-4">
               <p className="text-gray-400 text-sm text-center">Transcribiendo...</p>
+            </div>
+          )}
+          {errorMic && !transcribiendo && (
+            <div className="absolute top-6 left-4 right-4">
+              <div className="bg-red-900/80 border border-red-700 rounded-xl px-4 py-2 flex items-center justify-between gap-2">
+                <p className="text-red-200 text-xs">{errorMic}</p>
+                <button onClick={() => setErrorMic('')} className="text-red-400 text-xs flex-shrink-0">✕</button>
+              </div>
             </div>
           )}
         </div>
