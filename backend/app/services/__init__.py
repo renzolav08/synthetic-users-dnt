@@ -59,8 +59,34 @@ load_dotenv()
 client = AsyncOpenAI(
     api_key=os.getenv("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com",
+    timeout=30.0,
+    max_retries=0,
 )
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+
+
+# ── Inferir género del perfil ────────────────────────────────────────────────
+_PALABRAS_FEMENINO = {
+    "madre", "mamá", "mama", "mujer", "señora", "dueña", "emprendedora", "trabajadora",
+    "directora", "gerenta", "socia", "profesora", "doctora", "abogada",
+    "contadora", "diseñadora", "enfermera", "secretaria", "presidenta",
+    "ama", "ama de casa", "vendedora", "usuaria", "clienta", "compradora",
+    "jefa", "lideresa", "coordinadora", "gestora", "asesora", "consultora",
+    "investigadora", "analista de género", "trabajadora social",
+}
+
+def _inferir_genero(perfil: dict) -> str:
+    """Infiere género del nombre/rol; el campo genero del LLM se usa solo si la inferencia no es concluyente."""
+    texto = f"{perfil.get('nombre', '')} {perfil.get('rol', '')} {perfil.get('ocupacion', '')}".lower()
+    # La inferencia léxica tiene prioridad sobre el LLM (el LLM a veces se equivoca)
+    for palabra in _PALABRAS_FEMENINO:
+        if palabra in texto:
+            return "femenino"
+    # Si el LLM asignó un género válido y la inferencia no fue concluyente, usarlo
+    g = perfil.get("genero", "")
+    if g in ("masculino", "femenino"):
+        return g
+    return "masculino"
 
 
 # ── Foto realista (randomuser.me) ────────────────────────────────────────────
@@ -111,14 +137,31 @@ def _pcm_a_wav(pcm_bytes: bytes, sample_rate: int = 16000) -> bytes:
 
 async def generar_audio_tts(texto: str, voz: str = "nova") -> tuple[bytes, bytes]:
     """
-    Convierte texto a audio via gTTS (Google TTS, gratis, sin API key).
+    Convierte texto a audio.
+    - Voces masculinas (onyx): edge-tts con es-MX-JorgeNeural
+    - Voces femeninas (shimmer/nova): gTTS Google TTS
     Retorna (pcm16_16khz, wav_16khz).
     """
-    from gtts import gTTS
     import io
-    import asyncio
 
-    # gTTS es síncrono — correr en thread para no bloquear el event loop
+    if voz == "onyx":
+        # Voz masculina: edge-tts con Jorge (español México)
+        try:
+            import edge_tts
+            communicate = edge_tts.Communicate(texto, "es-MX-JorgeNeural")
+            mp3_bytes = b""
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    mp3_bytes += chunk["data"]
+            if mp3_bytes:
+                wav_bytes = _mp3_to_wav_pcm16(mp3_bytes)
+                return wav_bytes[44:], wav_bytes
+        except Exception:
+            pass  # fallback a gTTS si edge-tts falla
+
+    # Voz femenina (o fallback): gTTS
+    from gtts import gTTS
+
     def _generar():
         tts = gTTS(text=texto, lang="es", slow=False)
         buf = io.BytesIO()
@@ -146,6 +189,10 @@ _contexto_cache: dict[str, tuple[ContextoDetectado, float]] = {}
 async def detectar_contexto(idea_texto: str, pais_sugerido: str | None = None) -> ContextoDetectado:
     cache_key = hashlib.md5(f"{idea_texto}|{pais_sugerido or ''}".encode()).hexdigest()
     cached = _contexto_cache.get(cache_key)
+    # Invalidar si el contexto cacheado tiene más de 5 agentes (datos viejos)
+    if cached and len(cached[0].agentes) > 5:
+        del _contexto_cache[cache_key]
+        cached = None
     if cached and (time.time() - cached[1]) < _CACHE_TTL:
         return cached[0]
 
@@ -178,7 +225,7 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura exacta:
   ]
 }}
 
-REGLAS PARA LOS AGENTES (genera entre 5 y 7):
+REGLAS PARA LOS AGENTES (genera EXACTAMENTE 5, ni uno más ni uno menos):
 - categoria "M" = perspectiva del mercado/usuario/consumidor (habla desde la vivencia)
 - categoria "E" = perspectiva de experto/especialista (habla desde el conocimiento técnico)
 - SIEMPRE incluye al menos 1 agente "M" que represente al usuario/cliente final con un nombre de rol
@@ -187,17 +234,8 @@ REGLAS PARA LOS AGENTES (genera entre 5 y 7):
 - SIEMPRE incluye un agente técnico que evalúe la factibilidad de implementación
 - SIEMPRE incluye un agente que analice el contexto local, cultural y competitivo
 - SIEMPRE incluye un agente de riesgos específicos del sector
-- AGREGA agentes especializados según el sector:
-  * salud/medicina → médico, paciente, regulador sanitario
-  * educación → docente, director institucional, estudiante
-  * finanzas/fintech → usuario financiero, regulador financiero, analista de crédito
-  * retail/comercio → proveedor, operador logístico, consumidor
-  * agro/campo → agricultor, distribuidor, técnico agropecuario
-  * legal → abogado, cliente, regulador
-  * construcción → contratista, propietario, inspector
-  * turismo → viajero, operador turístico, gestor local
-  * etc. — usa roles que generarán el debate más valioso para ESTA idea específica
-- La suma de pesos debe ser exactamente 1.0 (distribúyelos equitativamente entre 4-5 agentes MÁXIMO, nunca más de 5)
+- Los 5 roles deben elegirse para generar el debate más valioso para ESTA idea específica
+- La suma de pesos debe ser exactamente 1.0 (0.20 por agente)
 - Los roles deben ser CONCRETOS y ESPECÍFICOS para el sector, no genéricos
 - NUNCA repitas el mismo rol — todos los roles deben ser únicos y representar perspectivas distintas
 - NO incluyas texto fuera del JSON"""
@@ -220,7 +258,7 @@ REGLAS PARA LOS AGENTES (genera entre 5 y 7):
         if rol not in vistos:
             vistos.add(rol)
             agentes_unicos.append(agente)
-    data["agentes"] = agentes_unicos[:5]
+    data["agentes"] = agentes_unicos[:5]  # hard cap: NUNCA más de 5
 
     resultado = ContextoDetectado(**data)
     _contexto_cache[cache_key] = (resultado, time.time())
@@ -236,24 +274,23 @@ async def buscar_contexto_web(contexto: ContextoDetectado) -> dict:
         f"competidores startups {contexto.sector} {contexto.pais} soluciones alternativas",
     ]
 
-    resultados = {}
     loop = asyncio.get_event_loop()
 
-    for query in queries:
+    async def _buscar(query: str) -> tuple[str, list]:
         try:
             result = await loop.run_in_executor(
                 None,
                 lambda q=query: tavily_client.search(q, max_results=2)
             )
-            resultados[query] = [
-                {
-                    "titulo": r.get("title", ""),
-                    "contenido": r.get("content", "")[:300],
-                }
+            return query, [
+                {"titulo": r.get("title", ""), "contenido": r.get("content", "")[:300]}
                 for r in result.get("results", [])
             ]
         except Exception:
-            resultados[query] = []
+            return query, []
+
+    pares = await asyncio.gather(*[_buscar(q) for q in queries])
+    resultados = dict(pares)
 
     return await sintetizar_resultados_web(resultados, contexto)
 
@@ -432,7 +469,7 @@ NO incluyas texto fuera del JSON."""
     perfil["categoria"] = agente["categoria"]
     perfil["peso"] = agente["peso"]
     perfil["tipo"] = agente["tipo"]
-    perfil["foto_url"] = await _fetch_photo(perfil.get("genero", "masculino"))
+    perfil["foto_url"] = await _fetch_photo(_inferir_genero(perfil))
     _cache_set(cache_key, perfil)
     return perfil
 
@@ -449,10 +486,29 @@ async def generar_todos_los_perfiles(
             datos_web=datos_web,
             session_id=session_id,
         )
-        for agente in contexto.agentes
+        for agente in contexto.agentes[:5]  # hard cap: máximo 5 agentes
     ]
-    perfiles = await asyncio.gather(*tareas)
-    return list(perfiles)
+    perfiles = list(await asyncio.gather(*tareas))
+
+    # Deduplicar nombres: si dos perfiles tienen el mismo nombre, cambiar el segundo
+    nombres_vistos: set[str] = set()
+    for p in perfiles:
+        nombre_original = p.get("nombre", "")
+        nombre = nombre_original
+        sufijos = ["García", "López", "Ramírez", "Torres", "Flores", "Vega", "Castillo", "Morales"]
+        idx_suf = 0
+        while nombre in nombres_vistos:
+            partes = nombre_original.split()
+            if partes:
+                nombre = f"{partes[0]} {sufijos[idx_suf % len(sufijos)]}"
+                idx_suf += 1
+            else:
+                nombre = f"{nombre_original} {idx_suf}"
+                idx_suf += 1
+        nombres_vistos.add(nombre)
+        p["nombre"] = nombre
+
+    return perfiles
 
 # ── Nodo 4: Debate adversarial por agente ─────────────────────────────────────
 async def generar_argumento_agente(
@@ -594,7 +650,7 @@ async def generar_argumento_agente(
         "posicion": posicion,
         "fuente_insight": fuente_insight,
         "foto_url": perfil.get("foto_url", ""),
-        "genero": perfil.get("genero", "masculino"),
+        "genero": _inferir_genero(perfil),
     }
 
 
@@ -964,22 +1020,43 @@ async def generar_consenso(
     scores_dim = rubrica["scores_dimension"]
 
     # Anclar al nivel de confianza de la síntesis para mantener coherencia
-    # (blend 60% rúbrica + 40% síntesis — el debate puede ajustar pero no saltar >15pp)
+    # (blend 60% rúbrica + 40% síntesis — el debate puede ajustar pero no saltar >12pp)
+    confianza_exploracion = insights_exploracion.get("nivel_confianza") if insights_exploracion else None
     if confianza_exploracion is not None:
         score_blended = round(score_rubrica * 0.6 + confianza_exploracion * 0.4, 3)
-        # Limitar el salto máximo respecto a la síntesis a ±0.12
         delta = score_blended - confianza_exploracion
         if abs(delta) > 0.12:
             score_blended = round(confianza_exploracion + (0.12 if delta > 0 else -0.12), 3)
         score_rubrica = max(0.0, min(1.0, score_blended))
 
-    # Veredicto determinista por rúbrica (umbrales fijos, sin LLM)
-    if score_rubrica >= 0.65:
+    # ── Ajuste por sentimiento del debate (posiciones ponderadas) ──────────────
+    # Las posiciones reales de los agentes deben influir en la confianza final.
+    # Si todos están en contra, la rúbrica sola no puede dar "viable".
+    total_peso = sum(a.get("agente_peso", 0.2) for a in argumentos) or 1.0
+    sentimiento_debate = 0.0
+    for a in argumentos:
+        peso = a.get("agente_peso", 0.2)
+        pos  = a.get("posicion", "neutral")
+        valor = 1.0 if pos == "pro" else (-1.0 if pos == "contra" else 0.0)
+        sentimiento_debate += (peso / total_peso) * valor
+    # sentimiento_debate: -1.0 (todos contra) a +1.0 (todos pro)
+    # Ajuste: contra penaliza hasta -0.22; pro suma hasta +0.10
+    if sentimiento_debate < 0:
+        ajuste_debate = sentimiento_debate * 0.22   # máximo -0.22 cuando todos contra
+    else:
+        ajuste_debate = sentimiento_debate * 0.10   # máximo +0.10 cuando todos pro
+    score_final = round(max(0.0, min(1.0, score_rubrica + ajuste_debate)), 3)
+
+    # Veredicto determinista por score final (umbrales fijos, sin LLM)
+    if score_final >= 0.65:
         veredicto_calculado = "viable"
-    elif score_rubrica >= 0.40:
+    elif score_final >= 0.40:
         veredicto_calculado = "condicionalmente_viable"
     else:
         veredicto_calculado = "no_viable"
+
+    # Reemplazar score_rubrica con el score ajustado para el resto del flujo
+    score_rubrica = score_final
 
     prompt = (
         "Eres un sintetizador experto de debates de evaluación de ideas de negocio.\n\n"

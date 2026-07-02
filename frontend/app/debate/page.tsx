@@ -73,6 +73,29 @@ function VideoMirror({ src }: { src: HTMLVideoElement | null }) {
   return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ objectFit: 'cover' }} />
 }
 
+// Versión lenta (1fps) del mirror — para agentes que no hablan: cara visible pero sin lipsync
+function SlowMirror({ src }: { src: HTMLVideoElement | null }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    if (!src || !canvasRef.current) return
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const draw = () => {
+      if (src.readyState >= 2 && src.videoWidth > 0) {
+        if (canvas.width !== src.videoWidth) canvas.width = src.videoWidth
+        if (canvas.height !== src.videoHeight) canvas.height = src.videoHeight
+        ctx.drawImage(src, 0, 0)
+      }
+    }
+    draw()
+    const id = setInterval(draw, 1500)
+    return () => clearInterval(id)
+  }, [src])
+  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full"
+    style={{ objectFit: 'cover', filter: 'brightness(0.78)' }} />
+}
+
 // ── TTS para debate ───────────────────────────────────────────────────────────
 async function pedirTTSDebate(texto: string, genero: string): Promise<{ wav: string | null; pcm: string | null }> {
   try {
@@ -104,20 +127,20 @@ function reproducirDebate(wavB64: string): Promise<void> {
 
 
 // ── Tile agente — estilo Meet ─────────────────────────────────────────────────
-function TileAgente({ rol, nombre, estadoTile, posicion, tileRef, videoSrc, subtitulo }: {
+function TileAgente({ rol, estadoTile, posicion, tileRef, videoSrc, slowVideoSrc }: {
   rol: string
-  nombre?: string
   estadoTile: 'pendiente' | 'hablando' | 'completado'
   posicion?: string
   tileRef?: (el: HTMLDivElement | null) => void
   videoSrc?: HTMLVideoElement | null
-  subtitulo?: string
+  slowVideoSrc?: HTMLVideoElement | null
 }) {
   const color = COLOR_HEX[rol] || '#6b7280'
   const inicial = INICIAL_ROL[rol] ?? rol.slice(0, 2).toUpperCase()
   const hablando = estadoTile === 'hablando'
   const completado = estadoTile === 'completado'
   const tieneVideo = !!videoSrc
+  const tieneSlowVideo = !!slowVideoSrc && !tieneVideo
 
   return (
     <div ref={tileRef} className="relative rounded-xl overflow-hidden flex flex-col items-center justify-center min-h-0 transition-all duration-300"
@@ -125,79 +148,64 @@ function TileAgente({ rol, nombre, estadoTile, posicion, tileRef, videoSrc, subt
         background: hablando
           ? `radial-gradient(ellipse at 50% 40%, ${color}35 0%, #0f172a 65%)`
           : `radial-gradient(ellipse at 50% 40%, ${color}12 0%, #111827 70%)`,
-        border: hablando ? `3px solid ${color}` : `1px solid ${color}30`,
+        border: hablando ? `3px solid ${color}` : `1px solid ${color}22`,
         boxShadow: hablando ? `0 0 40px ${color}70, 0 0 80px ${color}30, inset 0 0 30px ${color}15` : 'none',
-        opacity: estadoTile === 'pendiente' ? 0.35 : 1,
+        opacity: estadoTile === 'pendiente' ? 0.75 : 1,
         transform: hablando ? 'scale(1.02)' : 'scale(1)',
         zIndex: hablando ? 10 : 1,
       }}>
 
-      {/* Canvas Simli — ocupa el tile salvo los 52px inferiores del nombre */}
+      {/* Video en vivo Simli — SOLO el agente que habla (lipsync real) */}
       {tieneVideo && (
-        <div className="absolute inset-0" style={{ bottom: 52 }}>
+        <div className="absolute inset-0" style={{ bottom: 44 }}>
           <VideoMirror src={videoSrc!} />
         </div>
       )}
 
-      {/* Glow pulsante cuando habla (sin video) */}
-      {!tieneVideo && hablando && (
-        <div className="absolute inset-0 pointer-events-none animate-pulse rounded-xl"
-          style={{ background: `${color}10` }} />
-      )}
-
-      {/* Círculo de iniciales — solo cuando no hay video */}
-      {!tieneVideo && (
-        <div className="relative rounded-full flex items-center justify-center font-black text-white z-10"
-          style={{
-            width: 'clamp(64px, 28%, 120px)', height: 'clamp(64px, 28%, 120px)',
-            background: hablando ? `radial-gradient(circle, ${color}66 0%, ${color}33 100%)` : `radial-gradient(circle, ${color}33 0%, ${color}18 100%)`,
-            border: hablando ? `4px solid ${color}` : `3px solid ${color}55`,
-            fontSize: 'clamp(20px, 8%, 40px)',
-            boxShadow: hablando ? `0 0 24px ${color}` : 'none',
-          }}>
-          {inicial}
-          {hablando && <div className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ background: color }} />}
+      {/* Cara a 1fps — agentes que no hablan pero Simli está conectado */}
+      {tieneSlowVideo && (
+        <div className="absolute inset-0" style={{ bottom: 44 }}>
+          <SlowMirror src={slowVideoSrc!} />
         </div>
       )}
 
-      {/* Barras de audio — sobre el video (bottom:60) o debajo del círculo */}
-      {hablando && tieneVideo && (
-        <div className="absolute flex gap-1 items-end z-20" style={{ bottom: 60, height: 16 }}>
+      {/* Círculo de iniciales — sin video */}
+      {!tieneVideo && !tieneSlowVideo && (
+        <>
+          {hablando && <div className="absolute inset-0 pointer-events-none animate-pulse rounded-xl" style={{ background: `${color}10` }} />}
+          <div className="relative rounded-full flex items-center justify-center font-black text-white z-10"
+            style={{
+              width: 'clamp(64px, 28%, 120px)', height: 'clamp(64px, 28%, 120px)',
+              background: hablando ? `radial-gradient(circle, ${color}66 0%, ${color}33 100%)` : `radial-gradient(circle, ${color}33 0%, ${color}18 100%)`,
+              border: hablando ? `4px solid ${color}` : `3px solid ${color}55`,
+              fontSize: 'clamp(20px, 8%, 40px)',
+              boxShadow: hablando ? `0 0 24px ${color}` : 'none',
+            }}>
+            {inicial}
+            {hablando && <div className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ background: color }} />}
+          </div>
+        </>
+      )}
+
+      {/* Barras de audio — solo al agente que habla */}
+      {hablando && (
+        <div className="absolute flex gap-1 items-end z-20" style={{ bottom: (tieneVideo || tieneSlowVideo) ? 52 : undefined, height: 16 }}>
           {[4, 8, 12, 8, 4].map((h, i) => (
             <span key={i} className="rounded-full animate-bounce"
               style={{ width: 3, height: h, background: '#4ade80', animationDelay: `${i * 70}ms` }} />
           ))}
         </div>
       )}
-      {hablando && !tieneVideo && (
-        <div className="flex gap-1 items-end mt-2 z-10" style={{ height: 16 }}>
-          {[4, 8, 12, 8, 4].map((h, i) => (
-            <span key={i} className="rounded-full animate-bounce"
-              style={{ width: 3, height: h, background: color, animationDelay: `${i * 70}ms` }} />
-          ))}
-        </div>
-      )}
 
-      {/* Subtítulo dentro del tile — visible sobre el video */}
-      {subtitulo && hablando && (
-        <div className="absolute inset-x-0 z-30 px-2" style={{ bottom: 62 }}>
-          <div className="bg-black/80 backdrop-blur rounded-lg px-3 py-1.5">
-            <p className="text-white text-center leading-snug line-clamp-3" style={{ fontSize: 11 }}>{subtitulo}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Nombre y rol — franja inferior siempre visible */}
+      {/* Solo rol */}
       <div className="absolute bottom-0 inset-x-0 z-20"
-        style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.6) 60%, transparent 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '16px 8px 6px' }}>
-        {nombre && <p className="text-white font-semibold truncate w-full text-center" style={{ fontSize: 12, lineHeight: 1.4 }}>{nombre}</p>}
-        <p className="truncate w-full text-center font-medium" style={{ fontSize: 10, color: hablando ? color : '#9ca3af', lineHeight: 1.3 }}>{rol}</p>
+        style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.6) 60%, transparent 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '10px 8px 5px' }}>
+        <p className="truncate w-full text-center font-semibold" style={{ fontSize: 11, color: hablando ? color : '#e5e7eb', lineHeight: 1.3 }}>{rol}</p>
         {posicion && completado && (
           <p style={{ fontSize: 10, color: COLOR_POSICION[posicion] || '#9ca3af' }}>{ICONO_POSICION[posicion]} {posicion}</p>
         )}
       </div>
 
-      {/* Check completado */}
       {completado && (
         <div className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center z-20"
           style={{ background: `${color}44`, border: `1.5px solid ${color}` }}>
@@ -246,11 +254,19 @@ export default function DebatePage() {
   const { pais: paisExploracion, snapshotExploracion } = useExplorarStore()
   const { agregar: agregarHistorial } = useHistorialStore()
 
+  const estadoRef = useRef(estado)
+  useEffect(() => { estadoRef.current = estado }, [estado])
+
   const [silenciado, setSilenciado] = useState(false)
   const silenciadoRef = useRef(false)
+  const [pausado, setPausado] = useState(false)
+  const pausadoRef = useRef(false)
   const [mostrarContexto, setMostrarContexto] = useState(false)
+  const [mostrarChat, setMostrarChat] = useState(true)
+  const chatEndRef = useRef<HTMLDivElement>(null)
   const [rondas, setRondas] = useState<{ replica: string; respuestas: typeof argumentos }[]>([])
   const yaGuardoRef = useRef(false)
+  const debateIniciadoRef = useRef(false)
   const [textoReplica, setTextoReplica] = useState('')
   const [enviandoReplica, setEnviandoReplica] = useState(false)
   const [grabandoReplica, setGrabandoReplica] = useState(false)
@@ -264,11 +280,13 @@ export default function DebatePage() {
   const [subtituloActivo, setSubtituloActivo] = useState('')
   const ttsQueueRef = useRef<number[]>([])
   const ttsPlayingRef = useRef(false)
+  const desmontadoRef = useRef(false)  // abortar audio al salir de la página
   const ultimoArgPlayedRef = useRef(-1)
   const argumentosRef = useRef(argumentos)
   const faseRef = useRef(faseInteraccion)
   useEffect(() => { argumentosRef.current = argumentos }, [argumentos])
   useEffect(() => { faseRef.current = faseInteraccion }, [faseInteraccion])
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [argumentos.length])
 
   // Simli — dos conexiones: femenino (Hope) y masculino (Ong)
   const simliVideoRefF = useRef<HTMLVideoElement>(null)
@@ -291,15 +309,11 @@ export default function DebatePage() {
   const videoUsuarioRef = useRef<HTMLVideoElement>(null)
   const camaraStreamRef = useRef<MediaStream | null>(null)
 
-  // ── Simli init — espera a que el debate arranque para no saturar la red ──
+  // ── Simli init — corre UNA sola vez al montar; espera con polling a que el debate arranque ──
   useEffect(() => {
-    // Solo iniciar cuando el debate ya está en progreso o completado
-    if (estado !== 'debatiendo' && estado !== 'consenso' && estado !== 'completado') return
     if (!SIMLI_KEY || typeof window === 'undefined') return
-    if (!simliVideoRefF.current || !simliAudioRefF.current) return
-    if (!simliVideoRefM.current || !simliAudioRefM.current) return
-    if (simliConectadoFRef.current || simliConectadoMRef.current) return // ya conectado
     let destroyed = false
+    const ESTADOS_LISTOS = new Set(['debatiendo', 'consenso', 'completado'])
 
     async function initOne(
       faceId: string,
@@ -326,28 +340,35 @@ export default function DebatePage() {
       } catch (e) { console.error('[Simli debate]', e) }
     }
 
-    initOne(SIMLI_FACE_FEMENINO, simliVideoRefF.current!, simliAudioRefF.current!,
-      c => { simliRefF.current = c },
-      () => { setSimliConectadoF(true); simliConectadoFRef.current = true },
-    )
-    initOne(SIMLI_FACE_MASCULINO, simliVideoRefM.current!, simliAudioRefM.current!,
-      c => { simliRefM.current = c },
-      () => { setSimliConectadoM(true); simliConectadoMRef.current = true },
-    )
+    // Esperar a que los refs de video/audio estén montados y el debate haya arrancado
+    const poll = setInterval(() => {
+      if (destroyed) { clearInterval(poll); return }
+      if (!ESTADOS_LISTOS.has(estadoRef.current)) return
+      if (!simliVideoRefF.current || !simliAudioRefF.current) return
+      if (!simliVideoRefM.current || !simliAudioRefM.current) return
+      clearInterval(poll)
+      initOne(SIMLI_FACE_FEMENINO, simliVideoRefF.current, simliAudioRefF.current,
+        c => { simliRefF.current = c },
+        () => { setSimliConectadoF(true); simliConectadoFRef.current = true },
+      )
+      initOne(SIMLI_FACE_MASCULINO, simliVideoRefM.current, simliAudioRefM.current,
+        c => { simliRefM.current = c },
+        () => { setSimliConectadoM(true); simliConectadoMRef.current = true },
+      )
+    }, 400)
 
     return () => {
       destroyed = true
-      try { simliRefF.current?.stop() } catch {}
-      try { simliRefM.current?.stop() } catch {}
-      setSimliConectadoF(false); simliConectadoFRef.current = false
-      setSimliConectadoM(false); simliConectadoMRef.current = false
+      clearInterval(poll)
+      // Simli se detiene en el cleanup del useEffect de desmontaje (con deps [])
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [estado])
+  }, [])
 
 
   // ── TTS queue ──────────────────────────────────────────────────────────────
   async function processQueue() {
+    if (desmontadoRef.current) return
     if (ttsQueueRef.current.length === 0) {
       ttsPlayingRef.current = false
       setAgenteHablandoIdx(null)
@@ -358,41 +379,38 @@ export default function DebatePage() {
     const idx = ttsQueueRef.current.shift()!
     const arg = argumentosRef.current[idx]
     if (!arg) { processQueue(); return }
+    if (desmontadoRef.current) return
     setAgenteHablandoIdx(idx)
     setSubtituloActivo(arg.argumento)
     const genero = (arg as { genero?: string }).genero ?? 'femenino'
     const { wav, pcm } = await pedirTTSDebate(arg.argumento, genero)
+    if (desmontadoRef.current) return  // navegó fuera mientras pedía TTS
     if (faseRef.current !== 'finalizado') {
-      const esFem = genero !== 'masculino'
-      const simliConRef = esFem ? simliConectadoFRef : simliConectadoMRef
-      const simliInst  = esFem ? simliRefF.current   : simliRefM.current
-      if (simliConRef.current && simliInst && pcm) {
-        try {
-          const bin = atob(pcm); const bytes = new Uint8Array(bin.length)
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-          simliInst.sendAudioData(bytes)
-        } catch {}
-        // Sincronizar con el audio element de Simli para lipsync preciso
-        const audioEl = esFem ? simliAudioRefF.current : simliAudioRefM.current
+      // Enviar PCM a Simli solo para lipsync — el audio de Simli va siempre muteado
+      if (pcm) {
+        const esFem = genero !== 'masculino'
+        const simliConRef = esFem ? simliConectadoFRef : simliConectadoMRef
+        const simliInst   = esFem ? simliRefF.current  : simliRefM.current
+        if (simliConRef.current && simliInst) {
+          try {
+            const bin = atob(pcm); const bytes = new Uint8Array(bin.length)
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+            simliInst.sendAudioData(bytes)
+          } catch {}
+        }
+      }
+      // Audio real siempre por WAV: evento 'ended' confiable, sin bleeding de Simli
+      if (wav && !desmontadoRef.current) {
+        await reproducirDebate(wav)
+      } else if (pcm && !desmontadoRef.current) {
         const durMs = (atob(pcm).length / 2 / 16000) * 1000
         await new Promise<void>(resolve => {
-          let resolved = false
-          const done = () => { if (!resolved) { resolved = true; resolve() } }
-          // Escuchar el audio element de Simli (más preciso que timer)
-          if (audioEl) {
-            const onEnded = () => { audioEl.removeEventListener('ended', onEnded); done() }
-            audioEl.addEventListener('ended', onEnded)
-            skipAudioFn = () => { audioEl.removeEventListener('ended', onEnded); done() }
-          }
-          // Fallback: timer basado en duración del PCM + 300ms margen
-          const t = setTimeout(done, durMs + 300)
-          const prevSkip = skipAudioFn
-          skipAudioFn = () => { clearTimeout(t); prevSkip?.(); done() }
+          const t = setTimeout(resolve, durMs + 500)
+          skipAudioFn = () => { clearTimeout(t); resolve() }
         })
-      } else if (wav) {
-        await reproducirDebate(wav)
       }
     }
+    if (desmontadoRef.current) return
     setAgenteHablandoIdx(null)
     setSubtituloActivo('')
     processQueue()
@@ -424,19 +442,47 @@ export default function DebatePage() {
 
   useEffect(() => { if (!idea) router.replace('/') }, [idea, router])
 
+  // Detener TODO audio al desmontar (navegación fuera del debate)
+  useEffect(() => {
+    desmontadoRef.current = false
+    return () => {
+      desmontadoRef.current = true          // aborta processQueue en curso
+      ttsQueueRef.current = []              // vacía cola pendiente
+      ttsPlayingRef.current = false
+      skipAudioFn?.()
+      skipAudioFn = null
+      if (audioDebate) { audioDebate.pause(); audioDebate = null }
+      try { simliRefF.current?.stop() } catch {}
+      try { simliRefM.current?.stop() } catch {}
+      simliConectadoFRef.current = false
+      simliConectadoMRef.current = false
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function toggleSilencio() {
     const nuevoValor = !silenciadoRef.current
     silenciadoRef.current = nuevoValor
     setSilenciado(nuevoValor)
-    // Silenciar/activar audio de Simli
-    if (simliAudioRefF.current) simliAudioRefF.current.muted = nuevoValor
-    if (simliAudioRefM.current) simliAudioRefM.current.muted = nuevoValor
-    // Silenciar/activar audio de fallback WAV
     if (audioDebate) audioDebate.muted = nuevoValor
+    // Simli audio siempre muteado — no tocar
+  }
+
+  function togglePausa() {
+    const nuevoValor = !pausadoRef.current
+    pausadoRef.current = nuevoValor
+    setPausado(nuevoValor)
+    if (nuevoValor) {
+      if (audioDebate) audioDebate.pause()
+    } else {
+      if (audioDebate) audioDebate.play().catch(() => {})
+    }
   }
 
   // ── Debate ────────────────────────────────────────────────────────────────
   async function iniciarDebate() {
+    if (debateIniciadoRef.current) return   // StrictMode llama el efecto dos veces — ignorar el segundo
+    debateIniciadoRef.current = true
     setEstado('analizando')
     try {
       const res = await fetch(`${API}/evaluar-stream`, {
@@ -546,10 +592,10 @@ export default function DebatePage() {
   }
 
   async function generarConsensoFinal() {
-    if (audioDebate) { audioDebate.pause(); audioDebate = null }
-    skipAudioFn?.()
     ttsQueueRef.current = []
     ttsPlayingRef.current = false
+    skipAudioFn?.(); skipAudioFn = null
+    if (audioDebate) { audioDebate.pause(); audioDebate = null }
     setAgenteHablandoIdx(null)
     setSubtituloActivo('')
     setFaseInteraccion('generando_consenso')
@@ -700,9 +746,14 @@ export default function DebatePage() {
         )}
         <p className="text-gray-500 text-xs truncate flex-1 hidden sm:block">{idea}</p>
         <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+          <button onClick={() => setMostrarChat(v => !v)}
+            className={`text-xs border px-2.5 py-1 rounded transition flex items-center gap-1 ${mostrarChat ? 'border-blue-700 bg-blue-900/30 text-blue-400' : 'border-gray-700 text-gray-500 hover:text-gray-300'}`}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 16c0 .55-.45 1-1 1H7l-4 4V5c0-.55.45-1 1-1h16c.55 0 1 .45 1 1v11z"/></svg>
+            Chat
+          </button>
           {insights_exploracion && <span className="text-xs bg-purple-900/40 border border-purple-800 text-purple-400 px-2 py-0.5 rounded-full hidden sm:block">✓ Insights</span>}
           {cargando && <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />}
-          <span className="text-xs text-gray-400">{cargando ? ESTADOS_LABEL[estado] || 'Iniciando...' : 'Debate completado'}</span>
+          <span className="text-xs text-gray-400">{cargando ? ESTADOS_LABEL[estado] || 'Iniciando...' : faseInteraccion === 'preguntando' ? 'Ronda completada' : faseInteraccion === 'interviniendo' ? 'Interviniendo...' : 'Debate en curso'}</span>
         </div>
       </div>
 
@@ -720,40 +771,46 @@ export default function DebatePage() {
         </div>
       )}
 
-      {/* ── Grilla Meet ─────────────────────────────────────────────────────── */}
+      {/* ── Zona principal: grilla + chat ───────────────────────────────────── */}
+      <div className="flex-1 flex overflow-hidden gap-0">
+      {/* Grilla de video */}
       <div className="flex-1 relative overflow-hidden p-2">
         {estado === 'error' ? (
           <div className="h-full flex flex-col items-center justify-center gap-4">
             <p className="text-red-400 text-sm">{useDebateStore.getState().error || 'Error inesperado.'}</p>
             <div className="flex gap-3">
-              <button onClick={() => { setEstado('idle'); iniciarDebate() }} className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition">Reintentar</button>
+              <button onClick={() => { debateIniciadoRef.current = false; setEstado('idle'); iniciarDebate() }} className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition">Reintentar</button>
               <button onClick={() => { reset(); router.push('/') }} className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm px-6 py-2.5 rounded-xl transition">Volver</button>
             </div>
           </div>
         ) : (
           <div className={`h-full grid ${gridCols} gap-2`}>
-            {agentesParaMostrar.map(({ rol, nombre, argIdx }, i) => {
+            {agentesParaMostrar.map(({ rol, argIdx }, i) => {
               const tieneArg = argIdx !== null
               const estaHablando = agenteHablandoIdx === argIdx && argIdx !== null
               const estadoTile: 'pendiente' | 'hablando' | 'completado' =
                 estaHablando ? 'hablando' : tieneArg ? 'completado' : 'pendiente'
-              // Video Simli SOLO al agente que habla — los demás muestran iniciales
               const generoAgente = argIdx !== null ? (argumentos[argIdx]?.genero ?? 'femenino') : 'femenino'
-              const videoSrc: HTMLVideoElement | null = estaHablando
-                ? (generoAgente === 'masculino'
-                    ? (simliConectadoM ? simliVideoRefM.current : null)
-                    : (simliConectadoF ? simliVideoRefF.current : null))
-                : null
+              const esMasc = generoAgente === 'masculino'
+              const simliVidF = simliConectadoF ? simliVideoRefF.current : null
+              const simliVidM = simliConectadoM ? simliVideoRefM.current : null
+              // Preferir el género correcto; si falló esa conexión, usar la disponible
+              const simliVid = esMasc
+                ? (simliVidM ?? simliVidF)
+                : (simliVidF ?? simliVidM)
+              // Video en vivo con lipsync — solo el que habla
+              const videoSrc: HTMLVideoElement | null = estaHablando ? simliVid : null
+              // Video a 1fps — cara visible sin lipsync para los que ya tienen argumento
+              const slowVideoSrc: HTMLVideoElement | null = (!estaHablando && tieneArg) ? simliVid : null
               return (
                 <TileAgente
                   key={i}
                   tileRef={(el) => { tileRefs.current[i] = el }}
                   rol={rol}
-                  nombre={nombre}
                   estadoTile={estadoTile}
                   videoSrc={videoSrc}
+                  slowVideoSrc={slowVideoSrc}
                   posicion={argIdx !== null ? argumentos[argIdx]?.posicion : undefined}
-                  subtitulo={estaHablando ? subtituloActivo : undefined}
                 />
               )
             })}
@@ -769,8 +826,9 @@ export default function DebatePage() {
         {/* Videos Simli ocultos — fuente para los canvas mirrors */}
         <video ref={simliVideoRefF} autoPlay playsInline className="hidden" />
         <video ref={simliVideoRefM} autoPlay playsInline className="hidden" />
-        <audio ref={simliAudioRefF} autoPlay className="hidden" />
-        <audio ref={simliAudioRefM} autoPlay className="hidden" />
+        {/* Audio de Simli siempre muteado — se usa solo para lipsync, el sonido sale por WAV */}
+        <audio ref={simliAudioRefF} autoPlay muted className="hidden" />
+        <audio ref={simliAudioRefM} autoPlay muted className="hidden" />
 
 
 
@@ -781,24 +839,101 @@ export default function DebatePage() {
             <p className="text-gray-400 text-sm">{ESTADOS_LABEL[estado] || 'Iniciando...'}</p>
           </div>
         )}
-      </div>
+      </div>{/* fin grilla */}
+
+      {/* ── Panel de chat en tiempo real ─────────────────────────────────────── */}
+      {mostrarChat && (
+        <div className="w-72 flex-shrink-0 border-l border-gray-800 bg-gray-950 flex flex-col overflow-hidden">
+          <div className="flex-shrink-0 px-3 py-2 border-b border-gray-800 flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Debate en tiempo real</span>
+            <span className="text-xs text-gray-600">{argumentos.length} intervenciones</span>
+          </div>
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
+            {argumentos.map((arg, i) => {
+              const color = COLOR_HEX[arg.agente_rol] || '#6b7280'
+              const esHablando = agenteHablandoIdx === i
+              return (
+                <div key={i}
+                  className="rounded-xl p-3 transition-all duration-500"
+                  style={{
+                    background: esHablando ? `${color}20` : 'rgba(255,255,255,0.03)',
+                    borderLeft: `3px solid ${esHablando ? color : color + '55'}`,
+                    boxShadow: esHablando ? `0 0 16px ${color}30, inset 0 0 12px ${color}10` : 'none',
+                    transform: esHablando ? 'scale(1.015)' : 'scale(1)',
+                  }}>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="text-xs font-semibold truncate" style={{ color, opacity: esHablando ? 1 : 0.75 }}>
+                      {arg.agente_rol}
+                    </span>
+                    {arg.posicion && (
+                      <span className="text-xs flex-shrink-0" style={{ color: COLOR_POSICION[arg.posicion] }}>
+                        {ICONO_POSICION[arg.posicion]}
+                      </span>
+                    )}
+                    {esHablando && (
+                      <span className="flex gap-0.5 ml-auto flex-shrink-0 items-end">
+                        {[3, 6, 4, 7, 3, 5, 4].map((h, j) => (
+                          <span key={j} className="rounded-full animate-bounce inline-block"
+                            style={{ width: 2.5, height: h, background: color, animationDelay: `${j * 55}ms`, animationDuration: '0.7s' }} />
+                        ))}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs leading-relaxed transition-colors duration-300"
+                    style={{ color: esHablando ? '#f3f4f6' : '#9ca3af' }}>
+                    {arg.argumento}
+                  </p>
+                  {esHablando && (
+                    <div className="mt-2 h-0.5 rounded-full overflow-hidden" style={{ background: `${color}30` }}>
+                      <div className="h-full rounded-full animate-pulse" style={{ background: color, width: '60%' }} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {/* Rondas de réplica */}
+            {rondas.map((ronda, ri) => (
+              <div key={`ronda-${ri}`} className="space-y-2">
+                <div className="rounded-xl p-3 bg-blue-950/30 border-l-2 border-blue-600">
+                  <p className="text-xs text-blue-400 font-semibold mb-1">Tú</p>
+                  <p className="text-xs text-gray-300 leading-relaxed">{ronda.replica}</p>
+                </div>
+                {ronda.respuestas.map((resp, si) => {
+                  const color2 = COLOR_HEX[resp.agente_rol] || '#6b7280'
+                  return (
+                    <div key={si} className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.03)', borderLeft: `3px solid ${color2}` }}>
+                      <p className="text-xs font-semibold mb-1" style={{ color: color2 }}>{resp.agente_rol}</p>
+                      <p className="text-xs text-gray-300 leading-relaxed">{resp.argumento}</p>
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+            <div ref={chatEndRef} />
+          </div>
+        </div>
+      )}
+
+      </div>{/* fin flex-row zona principal */}
 
       {/* ── Barra de controles inferior ─────────────────────────────────────── */}
       <div className="flex-shrink-0 bg-gray-900/95 border-t border-gray-800 px-4 py-3">
         {/* Durante debate */}
         {faseInteraccion === 'debatiendo' && (
           <div className="flex items-center justify-center gap-3">
+            <button onClick={togglePausa}
+              className={`text-xs border px-4 py-2 rounded-lg transition font-medium flex items-center gap-1.5 ${pausado ? 'border-blue-500 bg-blue-900/30 text-blue-300' : 'border-gray-600 text-gray-300 hover:border-blue-500 hover:text-blue-300'}`}>
+              {pausado ? '▶ Reanudar' : '⏸ Pausar'}
+            </button>
+            <button onClick={toggleSilencio}
+              className={`text-xs border px-4 py-2 rounded-lg transition font-medium flex items-center gap-1.5 ${silenciado ? 'border-yellow-600 bg-yellow-900/20 text-yellow-400' : 'border-gray-600 text-gray-300 hover:text-white'}`}>
+              {silenciado ? '🔇 Silenciado' : '🔊 Silenciar'}
+            </button>
             {agenteHablandoIdx !== null && (
-              <>
-                <button onClick={toggleSilencio}
-                  className={`text-xs border px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${silenciado ? 'border-yellow-600 text-yellow-400 hover:bg-yellow-900/20' : 'border-gray-700 text-gray-400 hover:text-white'}`}>
-                  {silenciado ? '🔇 Silenciado' : '🔊 Silenciar'}
-                </button>
-                <button onClick={saltarHablando}
-                  className="text-xs text-gray-500 hover:text-white border border-gray-700 px-3 py-1.5 rounded-lg transition">
-                  ⏭ Saltar
-                </button>
-              </>
+              <button onClick={saltarHablando}
+                className="text-xs text-gray-400 hover:text-white border border-gray-600 px-4 py-2 rounded-lg transition">
+                ⏭ Saltar
+              </button>
             )}
             <p className="text-xs text-gray-600">{cargando ? ESTADOS_LABEL[estado] : 'Finalizando...'}</p>
           </div>
@@ -818,14 +953,14 @@ export default function DebatePage() {
               </svg>
             </button>
             <div className="w-px h-8 bg-gray-700" />
-            <p className="text-sm text-gray-400">El debate terminó.</p>
+            <p className="text-sm text-gray-400">Ronda completada — ¿deseas intervenir o cerrar el debate?</p>
             <button onClick={() => setFaseInteraccion('interviniendo')}
               className="bg-blue-700 hover:bg-blue-600 text-white text-sm font-medium px-5 py-2 rounded-xl transition">
               Intervenir
             </button>
             <button onClick={generarConsensoFinal}
               className="bg-purple-700 hover:bg-purple-600 text-white text-sm font-semibold px-5 py-2 rounded-xl transition">
-              Consenso →
+              Cerrar debate y generar consenso →
             </button>
           </div>
         )}

@@ -198,6 +198,7 @@ async def evaluar_stream(idea: IdeaInput):
 
         # Nodo 3
         perfiles = await generar_todos_los_perfiles(contexto, datos_web, session_id)
+        perfiles = perfiles[:5]  # hard cap: nunca más de 5 agentes en el debate
         yield f"data: {json.dumps({'tipo': 'perfiles_listos', 'total': len(perfiles)})}\n\n"
 
         # Nodo 4 — cada agente en cuanto termina (con timeout HU-004)

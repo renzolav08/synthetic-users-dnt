@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, Any
 
 
@@ -44,6 +44,12 @@ class ContextoDetectado(BaseModel):
     modelo_negocio: str
     riesgos_detectados: list[str]
     agentes: list[AgenteConfig]
+
+    @field_validator('agentes')
+    @classmethod
+    def max_cinco_agentes(cls, v: list) -> list:
+        # Hard cap: el debate nunca puede tener más de 5 agentes
+        return v[:5]
 
 
 # ── SUPUESTOS RIESGOSOS (Testing Business Ideas) ─────────────────────────────
