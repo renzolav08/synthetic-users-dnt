@@ -21,6 +21,34 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
 let audioActivo: HTMLAudioElement | null = null
 let audioCtx: AudioContext | null = null
 
+function beep(tipo: 'inicio' | 'fin') {
+  try {
+    const ctx = new AudioContext()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    if (tipo === 'inicio') {
+      // Tono ascendente corto — "listo para hablar"
+      osc.frequency.setValueAtTime(600, ctx.currentTime)
+      osc.frequency.linearRampToValueAtTime(900, ctx.currentTime + 0.12)
+      gain.gain.setValueAtTime(0.25, ctx.currentTime)
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + 0.15)
+    } else {
+      // Tono descendente corto — "grabación terminada"
+      osc.frequency.setValueAtTime(800, ctx.currentTime)
+      osc.frequency.linearRampToValueAtTime(400, ctx.currentTime + 0.18)
+      gain.gain.setValueAtTime(0.2, ctx.currentTime)
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + 0.2)
+    }
+    osc.onended = () => ctx.close()
+  } catch { /* ignorar si no hay AudioContext */ }
+}
+
 function reproducir(
   wavB64: string,
   onEnd: () => void,
@@ -114,7 +142,6 @@ export default function LlamadaExploracion({
   const [duracionLlamada, setDuracionLlamada] = useState(0)
   const [camaraActiva, setCamaraActiva] = useState(false)
 
-  const [transcripcionPendiente, setTranscripcionPendiente] = useState<string | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const camaraStreamRef = useRef<MediaStream | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -269,7 +296,11 @@ export default function LlamadaExploracion({
   enviarRef.current = enviarMensaje
 
   function toggleMic() {
-    if (grabando) { mediaRecorderRef.current?.stop(); return }
+    if (grabando) {
+      beep('fin')
+      mediaRecorderRef.current?.stop()
+      return
+    }
     // No grabar mientras el avatar habla — evita transcribir el audio del altavoz
     if (hablando) return
     if (!navigator.mediaDevices?.getUserMedia) return
@@ -278,6 +309,7 @@ export default function LlamadaExploracion({
       audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 },
     })
       .then(stream => {
+        beep('inicio')
         const chunks: BlobPart[] = []
         const inicioGrabacion = Date.now()
         const rec = new MediaRecorder(stream)
@@ -298,8 +330,7 @@ export default function LlamadaExploracion({
             form.append('file', blob, 'audio.webm')
             const r = await fetch(`${API}/transcribir`, { method: 'POST', body: form })
             const { texto } = await r.json()
-            // Mostrar para confirmar antes de enviar — evita transcripciones erróneas
-            if (texto?.trim()) setTranscripcionPendiente(texto.trim())
+            if (texto?.trim()) enviarRef.current(texto.trim())
           } catch { /* ignorar */ }
           finally { setTranscribiendo(false) }
         }
@@ -340,7 +371,6 @@ export default function LlamadaExploracion({
     if (audioActivo) { audioActivo.pause(); audioActivo = null }
     mediaRecorderRef.current?.stop()
     camaraStreamRef.current?.getTracks().forEach(t => t.stop())
-    setTranscripcionPendiente(null)
     onColgar()
   }
 
@@ -488,28 +518,6 @@ export default function LlamadaExploracion({
           )}
         </div>
       </div>
-
-      {/* Panel de confirmación de transcripción */}
-      {transcripcionPendiente !== null && (
-        <div className="flex-shrink-0 bg-gray-900 border-t border-gray-700 px-5 py-3 z-30 flex flex-col gap-2">
-          <p className="text-gray-400 text-xs uppercase tracking-wider">¿Enviar esto?</p>
-          <p className="text-white text-sm leading-relaxed">"{transcripcionPendiente}"</p>
-          <div className="flex gap-2 mt-1">
-            <button
-              onClick={() => { enviarRef.current(transcripcionPendiente); setTranscripcionPendiente(null) }}
-              className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2 rounded-xl transition"
-            >
-              Enviar ✓
-            </button>
-            <button
-              onClick={() => setTranscripcionPendiente(null)}
-              className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-sm py-2 rounded-xl transition"
-            >
-              Cancelar ✕
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Barra de controles inferior */}
       <div className="flex-shrink-0 h-24 bg-black/90 flex items-center justify-center gap-5 z-20">
