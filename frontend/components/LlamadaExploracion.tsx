@@ -144,8 +144,6 @@ export default function LlamadaExploracion({
   const [camaraActiva, setCamaraActiva] = useState(false)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null)
   const camaraStreamRef = useRef<MediaStream | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const colgadoRef = useRef(false)
@@ -301,55 +299,14 @@ export default function LlamadaExploracion({
   function toggleMic() {
     setErrorMic('')
 
-    // — Si ya está grabando, detener —
     if (grabando) {
       beep('fin')
-      // Detener Web Speech si está activo
-      if (recognitionRef.current) {
-        recognitionRef.current.stop()
-        recognitionRef.current = null
-      } else {
-        mediaRecorderRef.current?.stop()
-      }
+      mediaRecorderRef.current?.stop()
       return
     }
 
     if (hablando) return
 
-    // — Intentar Web Speech API primero (Chrome/Edge nativo, sin backend) —
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (SpeechRecognition) {
-      const rec = new SpeechRecognition()
-      rec.lang = 'es-PE'
-      rec.continuous = false
-      rec.interimResults = false
-      recognitionRef.current = rec
-
-      rec.onstart = () => { beep('inicio'); setGrabando(true) }
-
-      rec.onresult = (e: any) => {
-        const texto = Array.from(e.results as any[])
-          .map((r: any) => r[0].transcript)
-          .join(' ')
-          .trim()
-        if (texto) enviarRef.current(texto)
-      }
-
-      rec.onerror = (e: any) => {
-        if (e.error !== 'aborted') setErrorMic('Error de micrófono: ' + e.error)
-      }
-
-      rec.onend = () => {
-        recognitionRef.current = null
-        setGrabando(false)
-      }
-
-      rec.start()
-      return
-    }
-
-    // — Fallback: MediaRecorder + Whisper —
     if (!navigator.mediaDevices?.getUserMedia) {
       setErrorMic('Tu navegador no soporta grabación de audio.')
       return
@@ -419,7 +376,6 @@ export default function LlamadaExploracion({
     colgadoRef.current = true
     abortRef.current?.abort()
     if (audioActivo) { audioActivo.pause(); audioActivo = null }
-    if (recognitionRef.current) { try { recognitionRef.current.stop() } catch { /**/ }; recognitionRef.current = null }
     mediaRecorderRef.current?.stop()
     camaraStreamRef.current?.getTracks().forEach(t => t.stop())
     onColgar()

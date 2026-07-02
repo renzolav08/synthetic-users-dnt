@@ -67,18 +67,22 @@ async def health():
 
 @router.post("/transcribir")
 async def endpoint_transcribir(file: UploadFile = File(...)):
-    """Transcribe audio usando OpenAI Whisper. Acepta webm/mp4/ogg/wav."""
-    from app.services import client
+    """Transcribe audio usando Groq Whisper (gratis, sin créditos OpenAI)."""
+    import os
+    from groq import AsyncGroq
     audio_bytes = await file.read()
-    # Rechazar blobs vacíos (Opus comprime mucho, no usar umbral alto)
     if len(audio_bytes) < 200:
         return {"texto": ""}
 
-    response = await client.audio.transcriptions.create(
-        model="whisper-1",
-        file=(file.filename or "audio.webm", audio_bytes, file.content_type or "audio/webm"),
+    groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+    filename = file.filename or "audio.webm"
+    content_type = file.content_type or "audio/webm"
+
+    response = await groq_client.audio.transcriptions.create(
+        model="whisper-large-v3-turbo",
+        file=(filename, audio_bytes, content_type),
         language="es",
-        prompt="Conversación en español latinoamericano sobre ideas de negocio, startups y validación de mercado con usuarios reales.",
+        prompt="Conversación en español latinoamericano sobre ideas de negocio y startups.",
     )
     return {"texto": response.text}
 
