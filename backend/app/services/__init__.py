@@ -111,37 +111,21 @@ def _pcm_a_wav(pcm_bytes: bytes, sample_rate: int = 16000) -> bytes:
 
 async def generar_audio_tts(texto: str, voz: str = "nova") -> tuple[bytes, bytes]:
     """
-    Convierte texto a audio via Edge TTS (Microsoft, gratis, sin API key).
+    Convierte texto a audio via gTTS (Google TTS, gratis, sin API key).
     Retorna (pcm16_16khz, wav_16khz).
-    Edge TTS genera directamente WAV PCM16 con output_format adecuado.
     """
-    import edge_tts
+    from gtts import gTTS
     import io
-    import tempfile
-    import os
+    import asyncio
 
-    voz_map = {
-        "shimmer": "es-PE-CamilaNeural",
-        "onyx":    "es-PE-AlexNeural",
-        "nova":    "es-MX-DaliaNeural",
-        "alloy":   "es-MX-JorgeNeural",
-    }
-    voz_edge = voz_map.get(voz, "es-PE-CamilaNeural")
+    # gTTS es síncrono — correr en thread para no bloquear el event loop
+    def _generar():
+        tts = gTTS(text=texto, lang="es", slow=False)
+        buf = io.BytesIO()
+        tts.write_to_fp(buf)
+        return buf.getvalue()
 
-    # Usar output_format audio-16khz-32kbitrate-mono-mp3 y guardar a archivo temp
-    communicate = edge_tts.Communicate(texto, voz_edge, rate="+0%", volume="+0%")
-
-    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
-        tmp_path = tmp.name
-
-    try:
-        await communicate.save(tmp_path)
-        with open(tmp_path, "rb") as f:
-            mp3_bytes = f.read()
-    finally:
-        os.unlink(tmp_path)
-
-    # Decodificar MP3 con minimp3 puro Python (sin ffmpeg)
+    mp3_bytes = await asyncio.get_event_loop().run_in_executor(None, _generar)
     wav_bytes = _mp3_to_wav_pcm16(mp3_bytes)
     pcm16 = wav_bytes[44:]
     return pcm16, wav_bytes
