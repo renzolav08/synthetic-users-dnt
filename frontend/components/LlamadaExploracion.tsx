@@ -319,22 +319,25 @@ export default function LlamadaExploracion({
           stream.getTracks().forEach(t => t.stop())
           setGrabando(false)
           const duracion = Date.now() - inicioGrabacion
-          // Ignorar grabaciones muy cortas — probablemente click accidental o silencio
-          if (duracion < 800) { return }
+          // Ignorar clicks accidentales (menos de 500ms)
+          if (duracion < 500) { return }
           setTranscribiendo(true)
           try {
-            const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
-            // Ignorar blobs muy pequeños — silencio o ruido
-            if (blob.size < 5000) { setTranscribiendo(false); return }
+            const mimeType = rec.mimeType || 'audio/webm'
+            const blob = new Blob(chunks, { type: mimeType })
+            // Blob vacío = nada fue capturado
+            if (blob.size < 100) { setTranscribiendo(false); return }
             const form = new FormData()
-            form.append('file', blob, 'audio.webm')
+            // Usar extensión correcta según mimeType para que Whisper la reconozca
+            const ext = mimeType.includes('ogg') ? 'audio.ogg' : mimeType.includes('mp4') ? 'audio.mp4' : 'audio.webm'
+            form.append('file', blob, ext)
             const r = await fetch(`${API}/transcribir`, { method: 'POST', body: form })
             const { texto } = await r.json()
             if (texto?.trim()) enviarRef.current(texto.trim())
           } catch { /* ignorar */ }
           finally { setTranscribiendo(false) }
         }
-        rec.start()
+        rec.start(100) // timeslice de 100ms para acumular datos progresivamente
         setGrabando(true)
       })
       .catch(() => {})
