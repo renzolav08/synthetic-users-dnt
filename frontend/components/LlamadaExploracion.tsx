@@ -114,8 +114,11 @@ export default function LlamadaExploracion({
   const [duracionLlamada, setDuracionLlamada] = useState(0)
   const [camaraActiva, setCamaraActiva] = useState(false)
 
+  const [transcripcionPendiente, setTranscripcionPendiente] = useState<string | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const camaraStreamRef = useRef<MediaStream | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const colgadoRef = useRef(false)
   const videoUsuarioRef = useRef<HTMLVideoElement>(null)
   const simliVideoRef = useRef<HTMLVideoElement>(null)
   const simliAudioRef = useRef<HTMLAudioElement>(null)
@@ -195,6 +198,10 @@ export default function LlamadaExploracion({
     setPensando(true)
     setTimeout(() => setSubtituloUsuario(''), 3000)
 
+    // AbortController para cancelar el fetch si el usuario cuelga
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+
     try {
       const histActual = [...historial, { rol: 'emprendedor' as const, contenido: texto }]
 
@@ -208,8 +215,10 @@ export default function LlamadaExploracion({
           pregunta: texto,
           supuestos_activos: supuestosActivos?.length ? supuestosActivos : null,
         }),
+        signal: ctrl.signal,
       })
       const data = await res.json()
+      if (colgadoRef.current) return
       const respuesta: string = data.respuesta ?? ''
 
       // Persiste la respuesta del perfil inmediatamente
@@ -225,6 +234,8 @@ export default function LlamadaExploracion({
           if (data.supuestos_evaluados?.length) onSupuestosEvaluados?.(data.supuestos_evaluados)
         }),
       ])
+      // No reproducir si ya colgamos durante la espera del TTS
+      if (colgadoRef.current) return
       if (wav) {
         setHablando(true)
         if (simliConectadoRef.current && simliRef.current && pcm) {
@@ -237,15 +248,17 @@ export default function LlamadaExploracion({
           } catch { /* ignorar */ }
           // Estimar duración para ocultar subtítulo
           const durMs = (atob(pcm).length / 2 / 16000) * 1000 + 500
-          setTimeout(() => { setHablando(false); setAmplitud(0); amplitudRef.current = 0; setSubtitulo('') }, durMs)
+          setTimeout(() => { if (!colgadoRef.current) { setHablando(false); setAmplitud(0); amplitudRef.current = 0; setSubtitulo('') } }, durMs)
         } else {
           // Fallback sin Simli — reproducir WAV normal
-          reproducir(wav, () => { setHablando(false); setAmplitud(0); amplitudRef.current = 0; setSubtitulo('') }, (v) => { setAmplitud(v); amplitudRef.current = v })
+          reproducir(wav, () => { if (!colgadoRef.current) { setHablando(false); setAmplitud(0); amplitudRef.current = 0; setSubtitulo('') } }, (v) => { setAmplitud(v); amplitudRef.current = v })
         }
       } else {
         setSubtitulo('')
       }
-    } catch {
+    } catch (e) {
+      // Si el error es por abort (usuario colgó), no mostrar error
+      if (e instanceof Error && e.name === 'AbortError') return
       addMensaje(convKey, { rol: 'perfil', contenido: '(Error al conectar)' })
       setPensando(false); setSubtitulo('')
     }
@@ -275,7 +288,7 @@ export default function LlamadaExploracion({
           setGrabando(false)
           const duracion = Date.now() - inicioGrabacion
           // Ignorar grabaciones muy cortas — probablemente click accidental o silencio
-          if (duracion < 800) { setTranscribiendo(false); return }
+          if (duracion < 800) { return }
           setTranscribiendo(true)
           try {
             const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
@@ -285,7 +298,8 @@ export default function LlamadaExploracion({
             form.append('file', blob, 'audio.webm')
             const r = await fetch(`${API}/transcribir`, { method: 'POST', body: form })
             const { texto } = await r.json()
-            if (texto?.trim()) enviarRef.current(texto.trim())
+            // Mostrar para confirmar antes de enviar — evita transcripciones erróneas
+            if (texto?.trim()) setTranscripcionPendiente(texto.trim())
           } catch { /* ignorar */ }
           finally { setTranscribiendo(false) }
         }
@@ -321,9 +335,12 @@ export default function LlamadaExploracion({
   }, [])
 
   function colgar() {
+    colgadoRef.current = true
+    abortRef.current?.abort()
     if (audioActivo) { audioActivo.pause(); audioActivo = null }
     mediaRecorderRef.current?.stop()
     camaraStreamRef.current?.getTracks().forEach(t => t.stop())
+    setTranscripcionPendiente(null)
     onColgar()
   }
 
@@ -471,6 +488,28 @@ export default function LlamadaExploracion({
           )}
         </div>
       </div>
+
+      {/* Panel de confirmación de transcripción */}
+      {transcripcionPendiente !== null && (
+        <div className="flex-shrink-0 bg-gray-900 border-t border-gray-700 px-5 py-3 z-30 flex flex-col gap-2">
+          <p className="text-gray-400 text-xs uppercase tracking-wider">¿Enviar esto?</p>
+          <p className="text-white text-sm leading-relaxed">"{transcripcionPendiente}"</p>
+          <div className="flex gap-2 mt-1">
+            <button
+              onClick={() => { enviarRef.current(transcripcionPendiente); setTranscripcionPendiente(null) }}
+              className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2 rounded-xl transition"
+            >
+              Enviar ✓
+            </button>
+            <button
+              onClick={() => setTranscripcionPendiente(null)}
+              className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-sm py-2 rounded-xl transition"
+            >
+              Cancelar ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Barra de controles inferior */}
       <div className="flex-shrink-0 h-24 bg-black/90 flex items-center justify-center gap-5 z-20">
