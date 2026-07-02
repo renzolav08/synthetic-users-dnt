@@ -119,7 +119,8 @@ class ConversacionInput(BaseModel):
     idea_texto: str
     historial: list[MensajeConversacion]
     pregunta: str
-    supuestos_activos: Optional[list] = None  # [{id, enunciado, ...}] supuestos activados por el usuario
+    supuestos_activos: Optional[list] = None
+    session_id: Optional[str] = None  # para memoria vectorial y RAG
 
 class RespuestaConversacion(BaseModel):
     respuesta: str

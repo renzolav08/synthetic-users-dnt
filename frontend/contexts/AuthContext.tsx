@@ -66,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const data = await res.json()
     const userData = { nombre: data.nombre, email: data.email, token: data.access_token }
+    clearSessionStores()
     setManualUser(userData)
     localStorage.setItem('auth_token', data.access_token)
     localStorage.setItem('auth_user', JSON.stringify({ nombre: data.nombre, email: data.email }))
@@ -73,7 +74,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push('/')
   }
 
+  const clearSessionStores = () => {
+    localStorage.removeItem('explorar-session-v2')
+    localStorage.removeItem('debate-session-v2')
+    localStorage.removeItem('supuestos-session-v2')
+  }
+
   const logout = () => {
+    clearSessionStores()
     setManualUser(null)
     localStorage.removeItem('auth_token')
     localStorage.removeItem('auth_user')

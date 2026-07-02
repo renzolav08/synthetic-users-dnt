@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import { useAuth } from '@/contexts/AuthContext'
 
 export type MensajeSnapshot = { rol: 'emprendedor' | 'perfil'; contenido: string }
 
@@ -22,7 +23,7 @@ export type PerfilSnapshot = {
   resultado_deseado: string
   foto_url?: string
   genero?: 'masculino' | 'femenino'
-  historial: MensajeSnapshot[]         // vacío si no fue entrevistado
+  historial: MensajeSnapshot[]
   insights?: InsightsSnapshot | null
 }
 
@@ -67,19 +68,37 @@ interface HistorialStore {
   limpiar: () => void
 }
 
-export const useHistorialStore = create<HistorialStore>()(
-  persist(
-    (set) => ({
-      entradas: [],
-      agregar: (entrada) =>
-        set((s) => ({
-          entradas: [entrada, ...s.entradas].slice(0, 50), // máx 50
-        })),
-      limpiar: () => set({ entradas: [] }),
-    }),
-    {
-      name: 'debate-historial-v1',
-      storage: createJSONStorage(() => localStorage),
-    }
+// Cache de stores por email
+const storeCache: Record<string, ReturnType<typeof crearStore>> = {}
+
+function crearStore(email: string) {
+  return create<HistorialStore>()(
+    persist(
+      (set) => ({
+        entradas: [],
+        agregar: (entrada) =>
+          set((s) => ({
+            entradas: [entrada, ...s.entradas].slice(0, 50),
+          })),
+        limpiar: () => set({ entradas: [] }),
+      }),
+      {
+        name: `historial-${email}`,
+        storage: createJSONStorage(() => localStorage),
+      }
+    )
   )
-)
+}
+
+function getStore(email: string) {
+  if (!storeCache[email]) {
+    storeCache[email] = crearStore(email)
+  }
+  return storeCache[email]
+}
+
+export function useHistorialStore(): HistorialStore {
+  const { user } = useAuth()
+  const email = user?.email ?? 'guest'
+  return getStore(email)()
+}

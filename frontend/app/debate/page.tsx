@@ -428,10 +428,22 @@ export default function DebatePage() {
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
           simliInst.sendAudioData(bytes)
         } catch {}
-        const durMs = (atob(pcm).length / 2 / 16000) * 1000 + 500
+        // Sincronizar con el audio element de Simli para lipsync preciso
+        const audioEl = esFem ? simliAudioRefF.current : simliAudioRefM.current
+        const durMs = (atob(pcm).length / 2 / 16000) * 1000
         await new Promise<void>(resolve => {
-          const t = setTimeout(resolve, durMs)
-          skipAudioFn = () => { clearTimeout(t); resolve() }
+          let resolved = false
+          const done = () => { if (!resolved) { resolved = true; resolve() } }
+          // Escuchar el audio element de Simli (más preciso que timer)
+          if (audioEl) {
+            const onEnded = () => { audioEl.removeEventListener('ended', onEnded); done() }
+            audioEl.addEventListener('ended', onEnded)
+            skipAudioFn = () => { audioEl.removeEventListener('ended', onEnded); done() }
+          }
+          // Fallback: timer basado en duración del PCM + 300ms margen
+          const t = setTimeout(done, durMs + 300)
+          const prevSkip = skipAudioFn
+          skipAudioFn = () => { clearTimeout(t); prevSkip?.(); done() }
         })
       } else if (wav) {
         await reproducirDebate(wav)
@@ -781,14 +793,11 @@ export default function DebatePage() {
               const estaHablando = agenteHablandoIdx === argIdx && argIdx !== null
               const estadoTile: 'pendiente' | 'hablando' | 'completado' =
                 estaHablando ? 'hablando' : tieneArg ? 'completado' : 'pendiente'
-              // Solo el tile activo (hablando) muestra el video Simli
+              // Todos los tiles muestran el avatar Simli según su género
               const generoAgente = argIdx !== null ? (argumentos[argIdx]?.genero ?? 'femenino') : 'femenino'
-              let videoSrc: HTMLVideoElement | null = null
-              if (estaHablando) {
-                videoSrc = generoAgente === 'masculino'
-                  ? (simliConectadoM ? simliVideoRefM.current : null)
-                  : (simliConectadoF ? simliVideoRefF.current : null)
-              }
+              const videoSrc: HTMLVideoElement | null = generoAgente === 'masculino'
+                ? (simliConectadoM ? simliVideoRefM.current : null)
+                : (simliConectadoF ? simliVideoRefF.current : null)
               return (
                 <TileAgente
                   key={i}

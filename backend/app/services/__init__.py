@@ -1248,6 +1248,7 @@ async def conversar_con_perfil(
     historial: list[dict],
     pregunta: str,
     supuestos_activos: list[dict] | None = None,
+    session_id: str | None = None,
 ) -> dict:
     """
     El emprendedor hace una pregunta; el perfil sintético responde
@@ -1292,7 +1293,18 @@ REGLAS ESTRICTAS:
 - Máximo 4-5 oraciones por respuesta
 - Usa tu vocabulario y tono característico"""
 
-    mensajes = [{"role": "system", "content": sistema}]
+    # Recuperar contexto relevante de memoria vectorial
+    contexto_memoria = ""
+    if session_id:
+        from app.memory import guardar_turno, recuperar_contexto
+        turnos_relevantes = recuperar_contexto(session_id, pregunta, n=4)
+        if turnos_relevantes:
+            fragmentos = "\n".join(f'[{t["rol"]}]: {t["texto"][:200]}' for t in turnos_relevantes)
+            contexto_memoria = f"\n\nCONTEXTO PREVIO RELEVANTE DE ESTA CONVERSACIÓN:\n{fragmentos}"
+
+    sistema_con_memoria = sistema + contexto_memoria
+
+    mensajes = [{"role": "system", "content": sistema_con_memoria}]
 
     for msg in historial:
         rol_llm = "user" if msg["rol"] == "emprendedor" else "assistant"
@@ -1308,6 +1320,12 @@ REGLAS ESTRICTAS:
     )
 
     respuesta = response.choices[0].message.content
+
+    # Guardar turno en memoria vectorial
+    if session_id:
+        from app.memory import guardar_turno
+        guardar_turno(session_id, "emprendedor", pregunta)
+        guardar_turno(session_id, perfil['nombre'], respuesta)
 
     insights = None
     if len(historial) >= 4:

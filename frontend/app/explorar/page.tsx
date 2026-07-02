@@ -959,7 +959,7 @@ export default function ExplorarPage() {
         overlayEl
       )}
 
-    <main className="h-[calc(100vh-120px)] flex flex-col">
+    <main className="h-screen flex flex-col">
 
       {/* Barra superior */}
       <div className="border-b border-gray-800 bg-gray-900/80 backdrop-blur px-4 py-3 flex items-center justify-between flex-shrink-0">

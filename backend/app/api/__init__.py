@@ -21,6 +21,7 @@ from app.services import (
     generar_audio_tts,
 )
 from app.db import save_debate, get_debates, get_debate, save_encuesta
+from app.rag import indexar_documento, buscar_en_documentos, listar_documentos
 import base64
 import json
 import asyncio
@@ -327,14 +328,61 @@ async def endpoint_conversar(conv: ConversacionInput):
       "pregunta": "¿Qué te genera más dudas de este servicio?"
     }
     """
+    session_id = getattr(conv, 'session_id', None)
+
+    # Enriquecer pregunta con contexto RAG si hay documentos indexados
+    pregunta_enriquecida = conv.pregunta
+    if session_id:
+        fragmentos = buscar_en_documentos(session_id, conv.pregunta, n=3)
+        if fragmentos:
+            contexto_rag = "\n".join(f'[Doc: {f["nombre"]}] {f["texto"]}' for f in fragmentos)
+            pregunta_enriquecida = f"{conv.pregunta}\n\n[CONTEXTO DE DOCUMENTOS DEL EMPRENDEDOR]\n{contexto_rag}"
+
     resultado = await conversar_con_perfil(
         perfil=conv.perfil.model_dump(),
         idea_texto=conv.idea_texto,
         historial=[m.model_dump() for m in conv.historial],
-        pregunta=conv.pregunta,
+        pregunta=pregunta_enriquecida,
         supuestos_activos=conv.supuestos_activos if hasattr(conv, 'supuestos_activos') else None,
+        session_id=session_id,
     )
     return resultado
+
+
+@router.post("/explorar/documento")
+async def subir_documento(
+    session_id: str,
+    file: UploadFile = File(...),
+):
+    """Sube un documento (PDF o TXT) y lo indexa en ChromaDB para RAG."""
+    contenido = await file.read()
+    texto = ""
+
+    if file.filename and file.filename.lower().endswith(".pdf"):
+        try:
+            import io
+            from PyPDF2 import PdfReader
+            reader = PdfReader(io.BytesIO(contenido))
+            texto = "\n".join(p.extract_text() or "" for p in reader.pages)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Error al leer PDF: {e}")
+    else:
+        try:
+            texto = contenido.decode("utf-8", errors="ignore")
+        except Exception:
+            raise HTTPException(status_code=400, detail="Formato no soportado")
+
+    if not texto.strip():
+        raise HTTPException(status_code=400, detail="El documento está vacío o no se pudo extraer texto")
+
+    chunks = indexar_documento(session_id, file.filename or "documento", texto)
+    return {"ok": True, "chunks_indexados": chunks, "nombre": file.filename}
+
+
+@router.get("/explorar/documentos")
+async def listar_docs(session_id: str):
+    """Lista los documentos indexados para una sesión."""
+    return {"documentos": listar_documentos(session_id)}
 
 
 @router.post("/explorar/patrones")
