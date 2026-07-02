@@ -113,41 +113,47 @@ async def generar_audio_tts(texto: str, voz: str = "nova") -> tuple[bytes, bytes
     """
     Convierte texto a audio via Edge TTS (Microsoft, gratis, sin API key).
     Retorna (pcm16_16khz, wav_16khz).
+    Edge TTS genera directamente WAV PCM16 con output_format adecuado.
     """
     import edge_tts
     import io
+    import tempfile
+    import os
 
-    # Mapear voz OpenAI → voz Edge TTS en español latinoamericano
     voz_map = {
-        "shimmer": "es-PE-CamilaNeural",   # femenino peruano
-        "onyx":    "es-PE-AlexNeural",     # masculino peruano
-        "nova":    "es-MX-DaliaNeural",    # femenino mexicano (fallback)
-        "alloy":   "es-MX-JorgeNeural",    # masculino mexicano (fallback)
+        "shimmer": "es-PE-CamilaNeural",
+        "onyx":    "es-PE-AlexNeural",
+        "nova":    "es-MX-DaliaNeural",
+        "alloy":   "es-MX-JorgeNeural",
     }
     voz_edge = voz_map.get(voz, "es-PE-CamilaNeural")
 
-    communicate = edge_tts.Communicate(texto, voz_edge)
-    buf = io.BytesIO()
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            buf.write(chunk["data"])
+    # Usar output_format audio-16khz-32kbitrate-mono-mp3 y guardar a archivo temp
+    communicate = edge_tts.Communicate(texto, voz_edge, rate="+0%", volume="+0%")
 
-    # Edge TTS devuelve MP3 — convertir a WAV PCM16
-    mp3_bytes = buf.getvalue()
-    wav_bytes = _mp3_a_wav_pcm16(mp3_bytes, 16000)
-    pcm16 = wav_bytes[44:]  # quitar header WAV para obtener PCM puro
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        await communicate.save(tmp_path)
+        with open(tmp_path, "rb") as f:
+            mp3_bytes = f.read()
+    finally:
+        os.unlink(tmp_path)
+
+    # Decodificar MP3 con minimp3 puro Python (sin ffmpeg)
+    wav_bytes = _mp3_to_wav_pcm16(mp3_bytes)
+    pcm16 = wav_bytes[44:]
     return pcm16, wav_bytes
 
 
-def _mp3_a_wav_pcm16(mp3_bytes: bytes, target_rate: int = 16000) -> bytes:
-    """Convierte MP3 bytes a WAV PCM16 mono usando pydub."""
-    from pydub import AudioSegment
-    import io
-    audio = AudioSegment.from_mp3(io.BytesIO(mp3_bytes))
-    audio = audio.set_channels(1).set_frame_rate(target_rate).set_sample_width(2)
-    out = io.BytesIO()
-    audio.export(out, format="wav")
-    return out.getvalue()
+def _mp3_to_wav_pcm16(mp3_bytes: bytes) -> bytes:
+    """Convierte MP3 a WAV PCM16 16kHz mono usando miniaudio (sin ffmpeg)."""
+    import miniaudio
+    decoded = miniaudio.decode(mp3_bytes, output_format=miniaudio.SampleFormat.SIGNED16,
+                               nchannels=1, sample_rate=16000)
+    pcm = bytes(decoded.samples)
+    return _pcm_a_wav(pcm, 16000)
 
 
 # ── Nodo 1: Detección de contexto ────────────────────────────────────────────
