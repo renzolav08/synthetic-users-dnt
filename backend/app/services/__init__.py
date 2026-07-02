@@ -56,7 +56,10 @@ def get_session_tokens(session_id: str) -> dict:
 
 load_dotenv()
 
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AsyncOpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    base_url="https://api.deepseek.com",
+)
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 
@@ -108,20 +111,43 @@ def _pcm_a_wav(pcm_bytes: bytes, sample_rate: int = 16000) -> bytes:
 
 async def generar_audio_tts(texto: str, voz: str = "nova") -> tuple[bytes, bytes]:
     """
-    Convierte texto a audio via OpenAI TTS.
-    Retorna (pcm16_16khz, wav_16khz):
-      - pcm16_16khz: PCM16 mono 16kHz para Simli
-      - wav_16khz:   WAV 16kHz para reproducción directa en navegador
+    Convierte texto a audio via Edge TTS (Microsoft, gratis, sin API key).
+    Retorna (pcm16_16khz, wav_16khz).
     """
-    response = await client.audio.speech.create(
-        model="tts-1",
-        voice=voz,
-        input=texto,
-        response_format="pcm",  # raw PCM16 a 24 kHz
-    )
-    pcm16 = _downsample_pcm(response.content, 24000, 16000)
-    wav = _pcm_a_wav(pcm16, 16000)
-    return pcm16, wav
+    import edge_tts
+    import io
+
+    # Mapear voz OpenAI → voz Edge TTS en español latinoamericano
+    voz_map = {
+        "shimmer": "es-PE-CamilaNeural",   # femenino peruano
+        "onyx":    "es-PE-AlexNeural",     # masculino peruano
+        "nova":    "es-MX-DaliaNeural",    # femenino mexicano (fallback)
+        "alloy":   "es-MX-JorgeNeural",    # masculino mexicano (fallback)
+    }
+    voz_edge = voz_map.get(voz, "es-PE-CamilaNeural")
+
+    communicate = edge_tts.Communicate(texto, voz_edge)
+    buf = io.BytesIO()
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            buf.write(chunk["data"])
+
+    # Edge TTS devuelve MP3 — convertir a WAV PCM16
+    mp3_bytes = buf.getvalue()
+    wav_bytes = _mp3_a_wav_pcm16(mp3_bytes, 16000)
+    pcm16 = wav_bytes[44:]  # quitar header WAV para obtener PCM puro
+    return pcm16, wav_bytes
+
+
+def _mp3_a_wav_pcm16(mp3_bytes: bytes, target_rate: int = 16000) -> bytes:
+    """Convierte MP3 bytes a WAV PCM16 mono usando pydub."""
+    from pydub import AudioSegment
+    import io
+    audio = AudioSegment.from_mp3(io.BytesIO(mp3_bytes))
+    audio = audio.set_channels(1).set_frame_rate(target_rate).set_sample_width(2)
+    out = io.BytesIO()
+    audio.export(out, format="wav")
+    return out.getvalue()
 
 
 # ── Nodo 1: Detección de contexto ────────────────────────────────────────────
@@ -187,7 +213,7 @@ REGLAS PARA LOS AGENTES (genera entre 5 y 7):
 - NO incluyas texto fuera del JSON"""
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=800,
@@ -274,7 +300,7 @@ Responde UNICAMENTE con un JSON:
 }}"""
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=500,
@@ -403,7 +429,7 @@ NO incluyas texto fuera del JSON."""
         return cached
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=1000,
@@ -529,7 +555,7 @@ async def generar_argumento_agente(
     )
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=350,
         temperature=0.2
@@ -558,7 +584,7 @@ async def generar_argumento_agente(
     _log_tokens(session_id, response, f"argumento_{perfil['rol']}")
 
     clasif = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt_clasif}],
         max_tokens=5,
         temperature=0
@@ -662,7 +688,7 @@ Sé directo, máximo 3-4 oraciones. Habla en primera persona como {perfil['rol']
         try:
             r = await asyncio.wait_for(
                 client.chat.completions.create(
-                    model="gpt-4o",
+                    model="deepseek-chat",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=250,
                     temperature=0.8,
@@ -881,7 +907,7 @@ Responde ÚNICAMENTE con este JSON (sin texto adicional):
 }}"""
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=500,
@@ -990,7 +1016,7 @@ async def generar_consenso(
     )
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=1000,
@@ -1062,7 +1088,7 @@ REGLAS:
 - NO incluyas texto fuera del JSON"""
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=1500,
@@ -1123,7 +1149,7 @@ REGLAS:
 - NO incluyas texto fuera del JSON"""
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=1500,
@@ -1219,7 +1245,7 @@ IMPORTANTE:
 - NO incluyas texto fuera del JSON."""
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=3000,
@@ -1313,7 +1339,7 @@ REGLAS ESTRICTAS:
     mensajes.append({"role": "user", "content": pregunta})
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=mensajes,
         max_tokens=400,
         temperature=0.85
@@ -1366,7 +1392,7 @@ Si ninguno fue mencionado: {{"evaluados": []}}"""
 
     try:
         r = await client.chat.completions.create(
-            model="gpt-4o",
+            model="deepseek-chat",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             max_tokens=200,
@@ -1409,7 +1435,7 @@ Responde ÚNICAMENTE con un JSON:
 }}"""
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=600,
@@ -1479,7 +1505,7 @@ Responde ÚNICAMENTE con un JSON:
 }}"""
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=1000,
@@ -1585,7 +1611,7 @@ nivel_confianza: número entre 0.0 y 1.0 basado en la consistencia y profundidad
 NO incluyas texto fuera del JSON."""
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=2000,
@@ -1652,7 +1678,7 @@ CRITERIOS veredicto:
 nivel_confianza: 0.0-1.0 según cantidad y consistencia de evidencia"""
 
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=1500,
