@@ -301,43 +301,34 @@ export default function LlamadaExploracion({
       mediaRecorderRef.current?.stop()
       return
     }
-    // No grabar mientras el avatar habla — evita transcribir el audio del altavoz
     if (hablando) return
     if (!navigator.mediaDevices?.getUserMedia) return
 
-    navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 },
-    })
+    navigator.mediaDevices.getUserMedia({ audio: true })
       .then(stream => {
         beep('inicio')
         const chunks: BlobPart[] = []
-        const inicioGrabacion = Date.now()
         const rec = new MediaRecorder(stream)
         mediaRecorderRef.current = rec
+
         rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+
         rec.onstop = async () => {
           stream.getTracks().forEach(t => t.stop())
           setGrabando(false)
-          const duracion = Date.now() - inicioGrabacion
-          // Ignorar clicks accidentales (menos de 500ms)
-          if (duracion < 500) { return }
           setTranscribiendo(true)
           try {
-            const mimeType = rec.mimeType || 'audio/webm'
-            const blob = new Blob(chunks, { type: mimeType })
-            // Blob vacío = nada fue capturado
-            if (blob.size < 100) { setTranscribiendo(false); return }
+            const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
             const form = new FormData()
-            // Usar extensión correcta según mimeType para que Whisper la reconozca
-            const ext = mimeType.includes('ogg') ? 'audio.ogg' : mimeType.includes('mp4') ? 'audio.mp4' : 'audio.webm'
-            form.append('file', blob, ext)
+            form.append('file', blob, 'audio.webm')
             const r = await fetch(`${API}/transcribir`, { method: 'POST', body: form })
             const { texto } = await r.json()
             if (texto?.trim()) enviarRef.current(texto.trim())
           } catch { /* ignorar */ }
           finally { setTranscribiendo(false) }
         }
-        rec.start(100) // timeslice de 100ms para acumular datos progresivamente
+
+        rec.start()
         setGrabando(true)
       })
       .catch(() => {})
