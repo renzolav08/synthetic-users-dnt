@@ -38,9 +38,6 @@ const COLOR_RECOMENDACION: Record<string, string> = {
 const LABEL_RECOMENDACION: Record<string, string> = {
   viable: '✓ Viable', no_viable: '✗ No viable', condicionalmente_viable: '◐ Condicionalmente viable',
 }
-const LIKERT_LABELS: Record<number, string> = {
-  1: 'Muy bajo', 2: 'Bajo', 3: 'Regular', 4: 'Alto', 5: 'Muy alto',
-}
 
 // ── Canvas mirror: copia el stream de Simli en múltiples tiles ───────────────
 let mirrorRafId: number | null = null
@@ -105,78 +102,16 @@ function reproducirDebate(wavB64: string): Promise<void> {
   })
 }
 
-// ── Modal encuesta ────────────────────────────────────────────────────────────
-function EncuestaModal({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
-  const [valores, setValores] = useState({ utilidad: 3, calidad_argumentos: 3, relevancia_contexto: 3, intencion_reuso: 3, confianza_recomendacion: 3 })
-  const [comentario, setComentario] = useState('')
-  const [enviando, setEnviando] = useState(false)
-  const [enviado, setEnviado] = useState(false)
-  const preguntas: { key: keyof typeof valores; label: string }[] = [
-    { key: 'utilidad', label: 'Utilidad general del debate para tu decisión' },
-    { key: 'calidad_argumentos', label: 'Calidad y profundidad de los argumentos' },
-    { key: 'relevancia_contexto', label: 'Relevancia del contexto y agentes elegidos' },
-    { key: 'intencion_reuso', label: '¿Volverías a usar este sistema?' },
-    { key: 'confianza_recomendacion', label: 'Confianza en la recomendación final' },
-  ]
-  async function enviar() {
-    setEnviando(true)
-    try { await fetch(`${API}/encuesta`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, ...valores, comentario }) }); setEnviado(true) }
-    finally { setEnviando(false) }
-  }
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
-        {enviado ? (
-          <div className="text-center py-6">
-            <p className="text-white font-semibold text-lg mb-1">¡Gracias por tu feedback!</p>
-            <button onClick={onClose} className="mt-4 bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl text-sm font-semibold transition">Cerrar</button>
-          </div>
-        ) : (
-          <>
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-white font-semibold">Encuesta de satisfacción</h2>
-              <button onClick={onClose} className="text-gray-500 hover:text-white">✕</button>
-            </div>
-            <div className="space-y-4">
-              {preguntas.map(({ key, label }) => (
-                <div key={key}>
-                  <p className="text-gray-300 text-sm mb-2">{label}</p>
-                  <div className="flex gap-2">
-                    {[1,2,3,4,5].map(n => (
-                      <button key={n} onClick={() => setValores(v => ({ ...v, [key]: n }))}
-                        className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${valores[key] === n ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500'}`}
-                        title={LIKERT_LABELS[n]}>{n}</button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1 text-right">{LIKERT_LABELS[valores[key]]}</p>
-                </div>
-              ))}
-              <textarea value={comentario} onChange={e => setComentario(e.target.value)} rows={2}
-                placeholder="Comentario adicional (opcional)"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 resize-none focus:outline-none focus:border-blue-500" />
-            </div>
-            <div className="flex justify-end gap-3 mt-5">
-              <button onClick={onClose} className="text-gray-400 hover:text-white text-sm px-4 py-2">Omitir</button>
-              <button onClick={enviar} disabled={enviando}
-                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition">
-                {enviando ? 'Enviando...' : 'Enviar feedback'}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
 
 // ── Tile agente — estilo Meet ─────────────────────────────────────────────────
-function TileAgente({ rol, nombre, estadoTile, posicion, tileRef, videoSrc }: {
+function TileAgente({ rol, nombre, estadoTile, posicion, tileRef, videoSrc, subtitulo }: {
   rol: string
   nombre?: string
   estadoTile: 'pendiente' | 'hablando' | 'completado'
   posicion?: string
   tileRef?: (el: HTMLDivElement | null) => void
   videoSrc?: HTMLVideoElement | null
+  subtitulo?: string
 }) {
   const color = COLOR_HEX[rol] || '#6b7280'
   const inicial = INICIAL_ROL[rol] ?? rol.slice(0, 2).toUpperCase()
@@ -243,11 +178,20 @@ function TileAgente({ rol, nombre, estadoTile, posicion, tileRef, videoSrc }: {
         </div>
       )}
 
+      {/* Subtítulo dentro del tile — visible sobre el video */}
+      {subtitulo && hablando && (
+        <div className="absolute inset-x-0 z-30 px-2" style={{ bottom: 62 }}>
+          <div className="bg-black/80 backdrop-blur rounded-lg px-3 py-1.5">
+            <p className="text-white text-center leading-snug line-clamp-3" style={{ fontSize: 11 }}>{subtitulo}</p>
+          </div>
+        </div>
+      )}
+
       {/* Nombre y rol — franja inferior siempre visible */}
       <div className="absolute bottom-0 inset-x-0 z-20"
-        style={{ height: 52, background: 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, transparent 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '0 8px 6px' }}>
-        {nombre && <p className="text-white font-semibold truncate w-full text-center" style={{ fontSize: 11, lineHeight: 1.3 }}>{nombre}</p>}
-        <p className="truncate w-full text-center" style={{ fontSize: 10, color: tieneVideo ? '#d1d5db' : `${color}bb`, lineHeight: 1.3 }}>{rol}</p>
+        style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.6) 60%, transparent 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '16px 8px 6px' }}>
+        {nombre && <p className="text-white font-semibold truncate w-full text-center" style={{ fontSize: 12, lineHeight: 1.4 }}>{nombre}</p>}
+        <p className="truncate w-full text-center font-medium" style={{ fontSize: 10, color: hablando ? color : '#9ca3af', lineHeight: 1.3 }}>{rol}</p>
         {posicion && completado && (
           <p style={{ fontSize: 10, color: COLOR_POSICION[posicion] || '#9ca3af' }}>{ICONO_POSICION[posicion]} {posicion}</p>
         )}
@@ -302,8 +246,8 @@ export default function DebatePage() {
   const { pais: paisExploracion, snapshotExploracion } = useExplorarStore()
   const { agregar: agregarHistorial } = useHistorialStore()
 
-  const [mostrarEncuesta, setMostrarEncuesta] = useState(false)
-  const [encuestaMostrada, setEncuestaMostrada] = useState(false)
+  const [silenciado, setSilenciado] = useState(false)
+  const silenciadoRef = useRef(false)
   const [mostrarContexto, setMostrarContexto] = useState(false)
   const [rondas, setRondas] = useState<{ replica: string; respuestas: typeof argumentos }[]>([])
   const yaGuardoRef = useRef(false)
@@ -478,14 +422,18 @@ export default function DebatePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idea, estado])
 
-  useEffect(() => {
-    if (estado === 'completado' && sessionId && !encuestaMostrada) {
-      setEncuestaMostrada(true)
-      setTimeout(() => setMostrarEncuesta(true), 2000)
-    }
-  }, [estado, sessionId, encuestaMostrada])
-
   useEffect(() => { if (!idea) router.replace('/') }, [idea, router])
+
+  function toggleSilencio() {
+    const nuevoValor = !silenciadoRef.current
+    silenciadoRef.current = nuevoValor
+    setSilenciado(nuevoValor)
+    // Silenciar/activar audio de Simli
+    if (simliAudioRefF.current) simliAudioRefF.current.muted = nuevoValor
+    if (simliAudioRefM.current) simliAudioRefM.current.muted = nuevoValor
+    // Silenciar/activar audio de fallback WAV
+    if (audioDebate) audioDebate.muted = nuevoValor
+  }
 
   // ── Debate ────────────────────────────────────────────────────────────────
   async function iniciarDebate() {
@@ -675,9 +623,6 @@ export default function DebatePage() {
         portalEl
       )}
 
-      {/* Encuesta */}
-      {mostrarEncuesta && sessionId && <EncuestaModal sessionId={sessionId} onClose={() => setMostrarEncuesta(false)} />}
-
       {/* Modal de consenso finalizado */}
       {faseInteraccion === 'finalizado' && arbol && portalEl && createPortal(
         <div style={{ position:'fixed', inset:0, zIndex:9998, background:'rgba(3,7,18,0.85)', overflowY:'auto', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'24px 16px' }}>
@@ -733,7 +678,6 @@ export default function DebatePage() {
               </div>
             )}
             <div className="flex justify-center gap-3 pt-2">
-              {sessionId && <button onClick={() => setMostrarEncuesta(true)} className="border border-blue-700 text-blue-300 hover:bg-blue-900/30 font-semibold px-6 py-2.5 rounded-xl transition text-sm">★ Valorar</button>}
               <button onClick={exportarCSV} className="border border-gray-700 text-gray-300 hover:bg-gray-800 px-4 py-2.5 rounded-xl transition text-sm">↓ CSV</button>
               <button onClick={() => { reset(); router.push('/') }} className="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-8 py-2.5 rounded-xl transition text-sm">Evaluar otra idea →</button>
             </div>
@@ -793,11 +737,13 @@ export default function DebatePage() {
               const estaHablando = agenteHablandoIdx === argIdx && argIdx !== null
               const estadoTile: 'pendiente' | 'hablando' | 'completado' =
                 estaHablando ? 'hablando' : tieneArg ? 'completado' : 'pendiente'
-              // Todos los tiles muestran el avatar Simli según su género
+              // Video Simli SOLO al agente que habla — los demás muestran iniciales
               const generoAgente = argIdx !== null ? (argumentos[argIdx]?.genero ?? 'femenino') : 'femenino'
-              const videoSrc: HTMLVideoElement | null = generoAgente === 'masculino'
-                ? (simliConectadoM ? simliVideoRefM.current : null)
-                : (simliConectadoF ? simliVideoRefF.current : null)
+              const videoSrc: HTMLVideoElement | null = estaHablando
+                ? (generoAgente === 'masculino'
+                    ? (simliConectadoM ? simliVideoRefM.current : null)
+                    : (simliConectadoF ? simliVideoRefF.current : null))
+                : null
               return (
                 <TileAgente
                   key={i}
@@ -807,6 +753,7 @@ export default function DebatePage() {
                   estadoTile={estadoTile}
                   videoSrc={videoSrc}
                   posicion={argIdx !== null ? argumentos[argIdx]?.posicion : undefined}
+                  subtitulo={estaHablando ? subtituloActivo : undefined}
                 />
               )
             })}
@@ -826,14 +773,6 @@ export default function DebatePage() {
         <audio ref={simliAudioRefM} autoPlay className="hidden" />
 
 
-        {/* Subtítulo del agente hablando */}
-        {subtituloActivo && (
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 pointer-events-none">
-            <div className="bg-black/75 backdrop-blur rounded-xl px-4 py-2.5">
-              <p className="text-white text-sm leading-relaxed text-center line-clamp-3">{subtituloActivo}</p>
-            </div>
-          </div>
-        )}
 
         {/* Cargando inicial */}
         {cargando && agentesParaMostrar.length === 0 && (
@@ -848,12 +787,18 @@ export default function DebatePage() {
       <div className="flex-shrink-0 bg-gray-900/95 border-t border-gray-800 px-4 py-3">
         {/* Durante debate */}
         {faseInteraccion === 'debatiendo' && (
-          <div className="flex items-center justify-center gap-4">
+          <div className="flex items-center justify-center gap-3">
             {agenteHablandoIdx !== null && (
-              <button onClick={saltarHablando}
-                className="text-xs text-gray-500 hover:text-white border border-gray-700 px-3 py-1.5 rounded-lg transition">
-                ⏭ Saltar
-              </button>
+              <>
+                <button onClick={toggleSilencio}
+                  className={`text-xs border px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${silenciado ? 'border-yellow-600 text-yellow-400 hover:bg-yellow-900/20' : 'border-gray-700 text-gray-400 hover:text-white'}`}>
+                  {silenciado ? '🔇 Silenciado' : '🔊 Silenciar'}
+                </button>
+                <button onClick={saltarHablando}
+                  className="text-xs text-gray-500 hover:text-white border border-gray-700 px-3 py-1.5 rounded-lg transition">
+                  ⏭ Saltar
+                </button>
+              </>
             )}
             <p className="text-xs text-gray-600">{cargando ? ESTADOS_LABEL[estado] : 'Finalizando...'}</p>
           </div>

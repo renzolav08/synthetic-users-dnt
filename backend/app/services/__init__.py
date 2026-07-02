@@ -963,6 +963,16 @@ async def generar_consenso(
     score_rubrica = rubrica["nivel_confianza"]   # 0.0–1.0
     scores_dim = rubrica["scores_dimension"]
 
+    # Anclar al nivel de confianza de la síntesis para mantener coherencia
+    # (blend 60% rúbrica + 40% síntesis — el debate puede ajustar pero no saltar >15pp)
+    if confianza_exploracion is not None:
+        score_blended = round(score_rubrica * 0.6 + confianza_exploracion * 0.4, 3)
+        # Limitar el salto máximo respecto a la síntesis a ±0.12
+        delta = score_blended - confianza_exploracion
+        if abs(delta) > 0.12:
+            score_blended = round(confianza_exploracion + (0.12 if delta > 0 else -0.12), 3)
+        score_rubrica = max(0.0, min(1.0, score_blended))
+
     # Veredicto determinista por rúbrica (umbrales fijos, sin LLM)
     if score_rubrica >= 0.65:
         veredicto_calculado = "viable"
