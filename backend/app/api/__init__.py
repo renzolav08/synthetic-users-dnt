@@ -70,8 +70,8 @@ async def endpoint_transcribir(file: UploadFile = File(...)):
     """Transcribe audio usando OpenAI Whisper. Acepta webm/mp4/ogg/wav."""
     from app.services import client
     audio_bytes = await file.read()
-    # Rechazar audio demasiado corto — probablemente silencio o ruido
-    if len(audio_bytes) < 4000:
+    # Rechazar blobs vacíos (Opus comprime mucho, no usar umbral alto)
+    if len(audio_bytes) < 200:
         return {"texto": ""}
 
     response = await client.audio.transcriptions.create(
