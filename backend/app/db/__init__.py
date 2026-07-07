@@ -10,6 +10,14 @@ DB_PATH = os.getenv("DB_PATH", "debates.db")
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                email TEXT PRIMARY KEY,
+                nombre TEXT NOT NULL,
+                hashed_password TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS debate_sessions (
                 id TEXT PRIMARY KEY,
                 idea_texto TEXT NOT NULL,
@@ -40,6 +48,30 @@ async def init_db():
             )
         """)
         await db.commit()
+
+
+async def create_user(email: str, nombre: str, hashed_password: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO users (email, nombre, hashed_password, created_at) VALUES (?, ?, ?, ?)",
+            (email, nombre, hashed_password, datetime.utcnow().isoformat()),
+        )
+        await db.commit()
+
+
+async def get_user_by_email(email: str) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT email, nombre, hashed_password FROM users WHERE email = ?", (email,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return {"email": row[0], "nombre": row[1], "hashed_password": row[2]}
+    return None
+
+
+async def user_exists(email: str) -> bool:
+    return (await get_user_by_email(email)) is not None
 
 
 async def save_debate(

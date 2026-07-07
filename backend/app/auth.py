@@ -40,6 +40,21 @@ def authenticate_user(email: str, password: str) -> Optional[dict]:
     return user
 
 
+async def authenticate_user_async(email: str, password: str) -> Optional[dict]:
+    """Check hardcoded users first, then DB users."""
+    from app.db import get_user_by_email
+    user = USERS.get(email) or await get_user_by_email(email)
+    if not user:
+        return None
+    if not verify_password(password, user["hashed_password"]):
+        return None
+    return user
+
+
+def hash_password(plain: str) -> str:
+    return pwd_context.hash(plain)
+
+
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)

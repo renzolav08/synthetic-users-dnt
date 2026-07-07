@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
+from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi import Depends
 from app.schemas import IdeaInput, ContextoDetectado, ConversacionInput, PatronesInput, SintesisInput, EncuestaInput, ReplicaInput
-from app.auth import authenticate_user, create_access_token
+from app.auth import authenticate_user, authenticate_user_async, create_access_token, hash_password
 from app.services import (
     detectar_contexto,
     generar_replica_agentes,
@@ -32,7 +33,7 @@ router = APIRouter()
 
 @router.post("/auth/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = authenticate_user(form_data.username, form_data.password)
+    user = await authenticate_user_async(form_data.username, form_data.password)
     if not user:
         raise HTTPException(status_code=401, detail="Email o contraseña incorrectos")
     token = create_access_token({"sub": user["email"], "nombre": user["nombre"]})
@@ -41,6 +42,30 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         "token_type": "bearer",
         "nombre": user["nombre"],
         "email": user["email"],
+    }
+
+
+class RegisterInput(BaseModel):
+    email: str
+    password: str
+    nombre: str
+
+@router.post("/auth/register")
+async def register(data: RegisterInput):
+    from app.db import user_exists, create_user
+    from app.auth import USERS
+    if data.email in USERS or await user_exists(data.email):
+        raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese correo")
+    if len(data.password) < 6:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
+    hashed = hash_password(data.password)
+    await create_user(data.email, data.nombre, hashed)
+    token = create_access_token({"sub": data.email, "nombre": data.nombre})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "nombre": data.nombre,
+        "email": data.email,
     }
 
 

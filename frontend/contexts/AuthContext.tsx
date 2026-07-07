@@ -13,6 +13,7 @@ interface User {
 interface AuthContextType {
   user: User | null
   login: (email: string, password: string) => Promise<void>
+  register: (email: string, password: string, nombre: string) => Promise<void>
   logout: () => void
   loading: boolean
 }
@@ -74,6 +75,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push('/')
   }
 
+  const register = async (email: string, password: string, nombre: string) => {
+    const res = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, nombre }),
+    })
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.detail || 'Error al crear la cuenta')
+    }
+    const data = await res.json()
+    const userData = { nombre: data.nombre, email: data.email, token: data.access_token }
+    clearSessionStores()
+    setManualUser(userData)
+    localStorage.setItem('auth_token', data.access_token)
+    localStorage.setItem('auth_user', JSON.stringify({ nombre: data.nombre, email: data.email }))
+    document.cookie = `auth_token=${data.access_token}; path=/; max-age=${8 * 3600}; SameSite=Lax`
+    router.push('/')
+  }
+
   const clearSessionStores = () => {
     localStorage.removeItem('explorar-session-v2')
     localStorage.removeItem('debate-session-v2')
@@ -94,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, register, logout, loading }}>
       {children}
     </AuthContext.Provider>
   )
