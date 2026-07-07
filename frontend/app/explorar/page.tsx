@@ -940,6 +940,8 @@ export default function ExplorarPage() {
   const perfilSeleccionado = perfilActivoIdx !== null ? perfilesActivos[perfilActivoIdx] : null
   const convKey = skActivo && perfilActivoIdx !== null ? `${skActivo.id}::${perfilActivoIdx}` : null
 
+  const [panelMobile, setPanelMobile] = useState<'stakeholders' | 'perfiles' | 'chat'>('stakeholders')
+
   const overlayEl = typeof document !== 'undefined' ? document.body : null
 
   return (
@@ -962,43 +964,48 @@ export default function ExplorarPage() {
     <main className="h-screen flex flex-col">
 
       {/* Barra superior */}
-      <div className="border-b border-gray-800 bg-gray-900/80 backdrop-blur px-4 py-3 flex items-center justify-between flex-shrink-0">
-        <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm transition">
-          ← Cambiar idea
+      <div className="border-b border-gray-800 bg-gray-900/80 backdrop-blur pl-12 md:pl-4 pr-4 py-2 md:py-3 flex items-center justify-between flex-shrink-0 gap-2">
+        <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm transition flex-shrink-0">
+          ← Cambiar
         </button>
-        <div className="flex-1 mx-6 max-w-lg">
-          <p className="text-gray-400 text-xs text-center truncate">{idea}</p>
-        </div>
-        <div className="flex items-center gap-3">
+        <p className="text-gray-500 text-xs text-center truncate flex-1 hidden md:block">{idea}</p>
+        <div className="flex items-center gap-2 flex-shrink-0">
           {stakeholders.length > 0 && !cargandoSintesis && (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5">
+            <div className="hidden md:flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <div className="flex gap-0.5">
                   {Array.from({ length: MINIMO_INSIGHTS_TOTAL }).map((_, i) => (
                     <span key={i} className={`w-2 h-2 rounded-full ${i < totalInsightosCompletos ? 'bg-green-400' : 'bg-gray-700'}`} />
                   ))}
                 </div>
-                <span className="text-xs text-gray-500">{totalInsightosCompletos}/{MINIMO_INSIGHTS_TOTAL} perfiles</span>
-              </div>
-              <span className="text-gray-700">·</span>
-              <div className="flex items-center gap-1.5">
-                <div className="flex gap-0.5">
-                  {Array.from({ length: MINIMO_STAKEHOLDERS }).map((_, i) => (
-                    <span key={i} className={`w-2 h-2 rounded-full ${i < segmentosConDosInsights ? 'bg-blue-400' : 'bg-gray-700'}`} />
-                  ))}
-                </div>
-                <span className="text-xs text-gray-500">{segmentosConDosInsights}/{MINIMO_STAKEHOLDERS} segmentos</span>
+                <span className="text-xs text-gray-500">{totalInsightosCompletos}/{MINIMO_INSIGHTS_TOTAL}</span>
               </div>
             </div>
           )}
           <button
             onClick={finalizarExploracion}
             disabled={!puedeFinalizarExploracion || cargandoSintesis}
-            className="text-xs bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white px-4 py-1.5 rounded-lg transition font-medium"
+            className="text-xs bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg transition font-medium"
           >
-            {cargandoSintesis ? 'Sintetizando...' : 'Finalizar exploración →'}
+            {cargandoSintesis ? 'Sintetizando...' : 'Finalizar →'}
           </button>
         </div>
+      </div>
+
+      {/* Tabs de navegación — mobile only */}
+      <div className="md:hidden flex border-b border-gray-800 bg-gray-900 flex-shrink-0">
+        {([
+          { key: 'stakeholders', label: 'Segmentos' },
+          { key: 'perfiles', label: 'Perfiles' },
+          { key: 'chat', label: 'Conversación' },
+        ] as const).map(tab => (
+          <button key={tab.key} onClick={() => setPanelMobile(tab.key)}
+            className={`flex-1 py-2.5 text-xs font-medium transition ${
+              panelMobile === tab.key ? 'text-blue-400 border-b-2 border-blue-500' : 'text-gray-500'
+            }`}>
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {errorSintesis && (
@@ -1012,7 +1019,7 @@ export default function ExplorarPage() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* Panel izquierdo — Stakeholders + Supuestos */}
-        <div className="w-64 flex-shrink-0 border-r border-gray-800 overflow-y-auto p-3 space-y-2">
+        <div className={`${panelMobile === 'stakeholders' ? 'flex' : 'hidden'} md:flex flex-col w-full md:w-64 flex-shrink-0 border-r border-gray-800 overflow-y-auto p-3 space-y-2`}>
           <p className="text-xs text-gray-500 uppercase tracking-wider px-1 mb-3">Stakeholders</p>
 
           {cargandoStakeholders && (
@@ -1034,7 +1041,7 @@ export default function ExplorarPage() {
 
           {stakeholders.map(sk => (
             <StakeholderCard key={sk.id} sk={sk} activo={stakeholderActivo === sk.id}
-              onClick={() => { setStakeholderActivo(sk.id); setPerfilActivoIdx(null) }} />
+              onClick={() => { setStakeholderActivo(sk.id); setPerfilActivoIdx(null); setPanelMobile('perfiles') }} />
           ))}
 
           {/* Panel de supuestos interactivo */}
@@ -1042,10 +1049,11 @@ export default function ExplorarPage() {
         </div>
 
         {/* Panel central — Perfiles */}
-        <div className="w-80 flex-shrink-0 border-r border-gray-800 overflow-y-auto p-4">
+        <div className={`${panelMobile === 'perfiles' ? 'flex flex-col' : 'hidden'} md:block w-full md:w-80 flex-shrink-0 border-r border-gray-800 overflow-y-auto p-4`}>
           {skActivo ? (
             <PerfilesPanel stakeholder={skActivo} idea={idea} sector={sector} pais={pais}
-              perfilActivoIdx={perfilActivoIdx} onSelectPerfil={idx => setPerfilActivoIdx(idx)}
+              perfilActivoIdx={perfilActivoIdx}
+              onSelectPerfil={idx => { setPerfilActivoIdx(idx); setPanelMobile('chat') }}
               onLlamar={(perfil, convKey) => setLlamadaActiva({ perfil, convKey })} />
           ) : (
             <div className="flex items-center justify-center h-full">
@@ -1055,7 +1063,7 @@ export default function ExplorarPage() {
         </div>
 
         {/* Panel derecho — Conversación */}
-        <div className="flex-1 overflow-hidden p-4">
+        <div className={`${panelMobile === 'chat' ? 'flex flex-col' : 'hidden'} md:flex flex-1 overflow-hidden p-4`}>
           {perfilSeleccionado && convKey ? (
             <ConversacionPanel perfil={perfilSeleccionado} convKey={convKey} idea={idea} />
           ) : (

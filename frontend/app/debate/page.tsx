@@ -644,7 +644,8 @@ export default function DebatePage() {
   // Grid layout — número total de tiles
   const totalAgentes = contexto?.agentes.length ?? argumentos.length
   const totalTiles = totalAgentes + 1 // +1 usuario
-  const gridCols = totalTiles <= 3 ? 'grid-cols-2' : totalTiles <= 6 ? 'grid-cols-3' : 'grid-cols-4'
+  const gridColsDesktop = totalTiles <= 3 ? 'md:grid-cols-2' : totalTiles <= 6 ? 'md:grid-cols-3' : 'md:grid-cols-4'
+  const gridCols = `grid-cols-2 ${gridColsDesktop}`
 
   // Lista de agentes para mostrar (conocidos o en espera)
   const agentesParaMostrar: { rol: string; nombre?: string; argIdx: number | null }[] =
@@ -733,7 +734,7 @@ export default function DebatePage() {
       )}
 
       {/* ── Barra superior ──────────────────────────────────────────────────── */}
-      <div className="flex-shrink-0 h-11 bg-gray-900/90 border-b border-gray-800 backdrop-blur flex items-center px-4 gap-3 z-10">
+      <div className="flex-shrink-0 h-11 bg-gray-900/90 border-b border-gray-800 backdrop-blur flex items-center pl-12 md:pl-4 pr-4 gap-3 z-10">
         <button onClick={() => { if (audioDebate) { audioDebate.pause(); audioDebate = null }; reset(); router.push('/') }}
           className="text-gray-500 hover:text-white text-sm transition flex-shrink-0">
           ← Salir
@@ -843,7 +844,11 @@ export default function DebatePage() {
 
       {/* ── Panel de chat en tiempo real ─────────────────────────────────────── */}
       {mostrarChat && (
-        <div className="w-72 flex-shrink-0 border-l border-gray-800 bg-gray-950 flex flex-col overflow-hidden">
+        <div className="
+          fixed bottom-0 left-0 right-0 h-2/3 z-30 border-t border-gray-800
+          md:relative md:bottom-auto md:left-auto md:right-auto md:h-auto md:w-72 md:border-t-0 md:border-l md:z-auto
+          flex-shrink-0 bg-gray-950 flex flex-col overflow-hidden
+        ">
           <div className="flex-shrink-0 px-3 py-2 border-b border-gray-800 flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Debate en tiempo real</span>
             <span className="text-xs text-gray-600">{argumentos.length} intervenciones</span>
@@ -917,10 +922,10 @@ export default function DebatePage() {
       </div>{/* fin flex-row zona principal */}
 
       {/* ── Barra de controles inferior ─────────────────────────────────────── */}
-      <div className="flex-shrink-0 bg-gray-900/95 border-t border-gray-800 px-4 py-3">
+      <div className="flex-shrink-0 bg-gray-900/95 border-t border-gray-800 px-3 md:px-4 py-2 md:py-3">
         {/* Durante debate */}
         {faseInteraccion === 'debatiendo' && (
-          <div className="flex items-center justify-center gap-3">
+          <div className="flex items-center justify-center gap-2 flex-wrap">
             <button onClick={togglePausa}
               className={`text-xs border px-4 py-2 rounded-lg transition font-medium flex items-center gap-1.5 ${pausado ? 'border-blue-500 bg-blue-900/30 text-blue-300' : 'border-gray-600 text-gray-300 hover:border-blue-500 hover:text-blue-300'}`}>
               {pausado ? '▶ Reanudar' : '⏸ Pausar'}

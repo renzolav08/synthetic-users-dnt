@@ -59,7 +59,7 @@ export default function HistorialPage() {
   return (
     <main className="min-h-screen bg-gray-950 text-white">
       <div className="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto pl-12 md:pl-4 pr-4 py-3 flex items-center justify-between">
           <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm transition">
             ← Inicio
           </button>

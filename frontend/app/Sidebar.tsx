@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useHistorialStore } from '@/store/useHistorialStore'
@@ -22,6 +23,7 @@ export default function Sidebar() {
   const { entradas, limpiar } = useHistorialStore()
   const { idea: ideaActiva, stakeholders } = useExplorarStore()
   const sesionActiva = !!ideaActiva && stakeholders.length > 0
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   if (pathname === '/login') return null
 
@@ -36,11 +38,46 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-64 flex-shrink-0 flex flex-col bg-gray-900 border-r border-gray-800 h-screen sticky top-0 overflow-hidden">
+    <>
+      {/* Hamburger button — mobile only, shown when sidebar is closed */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        className="md:hidden fixed top-3 left-3 z-50 w-9 h-9 flex items-center justify-center rounded-lg bg-gray-900 border border-gray-700 text-gray-400 hover:text-white transition"
+        aria-label="Abrir menú"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
 
-      {/* Logo */}
+      {/* Backdrop — mobile only */}
+      {mobileOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+    <aside className={`
+      flex-col bg-gray-900 border-r border-gray-800 h-screen overflow-hidden
+      fixed top-0 left-0 z-50 w-64 flex-shrink-0 flex
+      transform transition-transform duration-300
+      ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
+      md:relative md:translate-x-0 md:sticky md:top-0
+    `}>
+
+      {/* Logo + close button (mobile) */}
       <div className="px-4 pt-5 pb-3">
         <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="md:hidden mr-1 text-gray-500 hover:text-white transition flex-shrink-0"
+            aria-label="Cerrar menú"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
           <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
             S
           </div>
@@ -153,5 +190,6 @@ export default function Sidebar() {
         </div>
       )}
     </aside>
+    </>
   )
 }

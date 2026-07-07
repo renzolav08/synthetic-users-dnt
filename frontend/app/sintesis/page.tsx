@@ -103,7 +103,7 @@ export default function SintesisPage() {
   }
 
   return (
-    <main className="max-w-4xl mx-auto px-4 py-8 space-y-8">
+    <main className="max-w-4xl mx-auto px-4 py-8 space-y-8 pt-16 md:pt-8">
 
       {/* Barra de navegación */}
       <div className="flex items-center justify-between">

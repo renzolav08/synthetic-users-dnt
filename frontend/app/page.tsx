@@ -90,18 +90,18 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-full bg-gray-950 text-white flex flex-col items-center justify-center px-4">
+    <main className="min-h-full bg-gray-950 text-white flex flex-col items-center justify-center px-4 pt-14 md:pt-0">
 
       {/* Header */}
-      <div className="mb-12 text-center">
-        <div className="inline-flex items-center gap-2 bg-blue-950 border border-blue-800 rounded-full px-4 py-1.5 text-blue-300 text-sm mb-6">
+      <div className="mb-8 md:mb-12 text-center px-2">
+        <div className="inline-flex items-center gap-2 bg-blue-950 border border-blue-800 rounded-full px-3 py-1 md:px-4 md:py-1.5 text-blue-300 text-xs md:text-sm mb-4 md:mb-6">
           <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
           Sistema Multiagente · DNT Startups UPAO
         </div>
-        <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
+        <h1 className="text-3xl md:text-5xl font-bold text-white mb-3 md:mb-4 tracking-tight">
           Evalúa tu idea de negocio
         </h1>
-        <p className="text-gray-400 text-lg max-w-xl">
+        <p className="text-gray-400 text-sm md:text-lg max-w-xl">
           Expón tu idea libremente. Una suite de agentes especializados
           la debatirá desde múltiples perspectivas críticas.
         </p>
