@@ -83,7 +83,6 @@ export default function Sidebar() {
           </div>
           <div>
             <div className="text-white text-sm font-semibold leading-tight">Synthetic Users</div>
-            <div className="text-gray-500 text-[10px]">DNT · UPAO</div>
           </div>
         </div>
       </div>
