@@ -65,7 +65,6 @@ export default function LoginPage() {
           <>
             <div className="text-center mb-8">
               <h1 className="text-white text-3xl font-bold mb-2">Iniciar sesión</h1>
-              <p className="text-gray-500 text-sm">DNT Startups · UPAO</p>
             </div>
 
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 flex flex-col gap-3">
