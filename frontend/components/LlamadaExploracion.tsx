@@ -4,8 +4,22 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useExplorarStore, type PerfilSintetico } from '@/store/useExplorarStore'
 
 const SIMLI_KEY = process.env.NEXT_PUBLIC_SIMLI_API_KEY ?? ''
-const SIMLI_FACE_FEMENINO  = process.env.NEXT_PUBLIC_SIMLI_FACE_F ?? 'tmp9i8bbq7c'
-const SIMLI_FACE_MASCULINO = process.env.NEXT_PUBLIC_SIMLI_FACE_M ?? 'tmp9i8bbq7c'
+
+const SIMLI_FACES_F = [
+  'afdb6a3e-3939-40aa-92df-01604c23101c',
+  '5fc23ea5-8175-4a82-aaaf-cdd8c88543dc',
+  'b9e5fba3-071a-4e35-896e-211c4d6eaa7b',
+  'cace3ef7-a4c4-425d-a8cf-a5358eb0c427',
+]
+const SIMLI_FACES_M = [
+  '804c347a-26c9-4dcf-bb49-13df4bed61e8',
+  '1c6aa65c-d858-4721-a4d9-bda9fde03141',
+  'dd10cb5a-d31d-4f12-b69f-6db3383c006e',
+]
+function pickRandom<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)] }
+
+const SIMLI_FACE_FEMENINO  = pickRandom(SIMLI_FACES_F)
+const SIMLI_FACE_MASCULINO = pickRandom(SIMLI_FACES_M)
 const SIMLI_IMG_F = process.env.NEXT_PUBLIC_SIMLI_IMG_F ?? ''
 const SIMLI_IMG_M = process.env.NEXT_PUBLIC_SIMLI_IMG_M ?? ''
 function getAvatarImg(genero?: string, fotoUrl?: string) {
