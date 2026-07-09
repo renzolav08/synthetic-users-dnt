@@ -10,6 +10,7 @@ import LlamadaExploracion from '@/components/LlamadaExploracion'
 import { useMic } from '@/hooks/useMic'
 import { MicPreviewModal } from '@/components/MicPreviewModal'
 import { MicAudioBar } from '@/components/MicAudioBar'
+import { beep } from '@/utils/beep'
 
 // Imagen del avatar Simli según género (si está configurado)
 const SIMLI_IMG_F = process.env.NEXT_PUBLIC_SIMLI_IMG_F ?? ''
@@ -528,6 +529,8 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
   const { grabando, transcribiendo: transcripcionInterim, audioLevel, errorMic, preview, toggleMic: toggleMicrofono, confirmPreview, cancelPreview, retryMic } = useMic({
     apiUrl: API,
     onSend: handleMicSend,
+    onBeepStart: () => beep('inicio'),
+    onBeepEnd: () => beep('fin'),
   })
 
   // Supuestos activos filtrados

@@ -9,6 +9,7 @@ import { useHistorialStore } from '@/store/useHistorialStore'
 import { useMic } from '@/hooks/useMic'
 import { MicPreviewModal } from '@/components/MicPreviewModal'
 import { MicAudioBar } from '@/components/MicAudioBar'
+import { beep } from '@/utils/beep'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
 const SIMLI_KEY = process.env.NEXT_PUBLIC_SIMLI_API_KEY ?? ''
@@ -295,6 +296,8 @@ export default function DebatePage() {
   const { grabando: grabandoReplica, transcribiendo: transcribiendoReplica, audioLevel: audioLevelReplica, errorMic: errorMicReplica, preview: previewReplica, toggleMic: toggleMicReplica, confirmPreview: confirmPreviewReplica, cancelPreview: cancelPreviewReplica, retryMic: retryMicReplica } = useMic({
     apiUrl: API,
     onSend: handleMicReplicaSend,
+    onBeepStart: () => beep('inicio'),
+    onBeepEnd: () => beep('fin'),
   })
   const enviarReplicaRef = useRef<() => void>(() => {})
   const [faseInteraccion, setFaseInteraccion] = useState<'debatiendo' | 'preguntando' | 'interviniendo' | 'generando_consenso' | 'finalizado'>('debatiendo')

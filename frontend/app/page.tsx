@@ -8,10 +8,20 @@ import { useRouter } from 'next/navigation'
 import { useMic } from '@/hooks/useMic'
 import { MicPreviewModal } from '@/components/MicPreviewModal'
 import { MicAudioBar } from '@/components/MicAudioBar'
+import { beep } from '@/utils/beep'
 
-const PAISES = [
-  'Perú', 'México', 'Colombia', 'Argentina', 'Chile', 'Ecuador',
-  'Bolivia', 'Venezuela', 'Uruguay', 'Paraguay', 'España',
+const PAISES: { nombre: string; bandera: string }[] = [
+  { nombre: 'Perú',      bandera: '🇵🇪' },
+  { nombre: 'México',    bandera: '🇲🇽' },
+  { nombre: 'Colombia',  bandera: '🇨🇴' },
+  { nombre: 'Argentina', bandera: '🇦🇷' },
+  { nombre: 'Chile',     bandera: '🇨🇱' },
+  { nombre: 'Ecuador',   bandera: '🇪🇨' },
+  { nombre: 'Bolivia',   bandera: '🇧🇴' },
+  { nombre: 'Venezuela', bandera: '🇻🇪' },
+  { nombre: 'Uruguay',   bandera: '🇺🇾' },
+  { nombre: 'Paraguay',  bandera: '🇵🇾' },
+  { nombre: 'España',    bandera: '🇪🇸' },
 ]
 
 // Mapeo de código ISO → nombre en español usado en el sistema
@@ -34,6 +44,8 @@ export default function Home() {
   const { grabando, transcribiendo, audioLevel, errorMic, preview, toggleMic, confirmPreview, cancelPreview, retryMic } = useMic({
     apiUrl: API,
     onSend: handleMicSend,
+    onBeepStart: () => beep('inicio'),
+    onBeepEnd: () => beep('fin'),
   })
   const { estado, setEstado } = useDebateStore()
   const explorarStore = useExplorarStore()
@@ -149,7 +161,7 @@ export default function Home() {
             className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-600 transition disabled:opacity-50"
           >
             {PAISES.map(p => (
-              <option key={p} value={p}>{p}</option>
+              <option key={p.nombre} value={p.nombre}>{p.bandera} {p.nombre}</option>
             ))}
           </select>
         </div>
@@ -173,10 +185,9 @@ export default function Home() {
           <button
             onClick={explorarPrimero}
             disabled={cargando || texto.trim().length < 20}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm flex items-center justify-center gap-2"
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm"
           >
-            <span>💬</span>
-            Explorar con usuarios sintéticos →
+            Explorar con usuarios sintéticos
           </button>
         </div>
 
