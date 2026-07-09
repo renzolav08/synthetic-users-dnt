@@ -111,7 +111,7 @@ export default function Home() {
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
             disabled={cargando}
-            placeholder={grabando ? '🎤 Grabando... da click al micrófono para terminar' : transcribiendo ? 'Transcribiendo...' : 'Ej: Quiero crear una app que conecte a dueños de bodegas con proveedores mayoristas para hacer pedidos directos sin intermediarios...'}
+            placeholder={grabando ? 'Grabando... da click al micrófono para terminar' : transcribiendo ? 'Transcribiendo...' : 'Ej: Quiero crear una app que conecte a dueños de bodegas con proveedores mayoristas para hacer pedidos directos sin intermediarios...'}
             rows={6}
             className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 pr-14 text-white placeholder-gray-500 resize-none focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition disabled:opacity-50 text-sm leading-relaxed"
           />
@@ -166,15 +166,8 @@ export default function Home() {
           </select>
         </div>
 
-        {/* Contador de palabras */}
-        <div className="flex justify-between items-center mt-2 mb-5">
-          <span className="text-xs text-gray-500">
-            {texto.trim().length < 20 && texto.length > 0
-              ? 'Escribe al menos 20 caracteres para continuar'
-              : texto.trim().length >= 20
-              ? '✓ Listo para evaluar'
-              : 'Describe tu idea con el mayor detalle posible'}
-          </span>
+        {/* Contador de caracteres */}
+        <div className="flex justify-end items-center mt-2 mb-5">
           <span className={`text-xs ${texto.length > 500 ? 'text-yellow-400' : 'text-gray-500'}`}>
             {texto.length} caracteres
           </span>
@@ -191,36 +184,6 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Descripción del flujo */}
-        {!cargando && texto.trim().length >= 20 && (
-          <p className="text-center text-xs text-gray-600 mt-4">
-            Paso 1: entrevistas · Paso 2: síntesis · Paso 3: debate multiagente
-          </p>
-        )}
-
-        {/* Sesión en progreso */}
-        {sesionActiva && (
-          <div className="mt-4 bg-blue-950/40 border border-blue-800 rounded-xl p-4 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
-                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
-                <p className="text-blue-300 text-xs font-semibold">Exploración en progreso</p>
-              </div>
-              <p className="text-gray-400 text-xs truncate">
-                {explorarStore.idea.slice(0, 80)}{explorarStore.idea.length > 80 ? '…' : ''}
-              </p>
-              <p className="text-gray-600 text-xs mt-0.5">
-                {explorarStore.stakeholders.length} segmentos · {mensajesEnSesion} mensajes
-              </p>
-            </div>
-            <button
-              onClick={() => router.push('/explorar')}
-              className="flex-shrink-0 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition"
-            >
-              Retomar →
-            </button>
-          </div>
-        )}
       </div>
 
 
