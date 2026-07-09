@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useDebateStore } from '@/store/useDebateStore'
 import { useExplorarStore } from '@/store/useExplorarStore'
 import { useSupuestosStore } from '@/store/useSupuestosStore'
 import { useRouter } from 'next/navigation'
+import { useMic } from '@/hooks/useMic'
+import { MicPreviewModal } from '@/components/MicPreviewModal'
+import { MicAudioBar } from '@/components/MicAudioBar'
 
 const PAISES = [
   'Perú', 'México', 'Colombia', 'Argentina', 'Chile', 'Ecuador',
@@ -22,40 +25,16 @@ export default function Home() {
   const [texto, setTexto] = useState('')
   const [pais, setPais] = useState('Perú')
   const [detectandoPais, setDetectandoPais] = useState(true)
-  const [grabando, setGrabando] = useState(false)
-  const [transcribiendo, setTranscribiendo] = useState(false)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-
   const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
 
-  function toggleMic() {
-    if (grabando) { mediaRecorderRef.current?.stop(); return }
-    if (!navigator.mediaDevices?.getUserMedia) return
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then(stream => {
-        const chunks: BlobPart[] = []
-        const rec = new MediaRecorder(stream)
-        mediaRecorderRef.current = rec
-        rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-        rec.onstop = async () => {
-          stream.getTracks().forEach(t => t.stop())
-          setGrabando(false)
-          setTranscribiendo(true)
-          try {
-            const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
-            const form = new FormData()
-            form.append('file', blob, 'audio.webm')
-            const r = await fetch(`${API}/transcribir`, { method: 'POST', body: form })
-            const { texto: transcrito } = await r.json()
-            if (transcrito?.trim()) setTexto(prev => prev ? prev + ' ' + transcrito.trim() : transcrito.trim())
-          } catch { /* ignorar */ }
-          finally { setTranscribiendo(false) }
-        }
-        rec.start()
-        setGrabando(true)
-      })
-      .catch(() => {})
-  }
+  const handleMicSend = useCallback((transcrito: string) => {
+    setTexto(prev => prev ? prev + ' ' + transcrito : transcrito)
+  }, [])
+
+  const { grabando, transcribiendo, audioLevel, errorMic, preview, toggleMic, confirmPreview, cancelPreview, retryMic } = useMic({
+    apiUrl: API,
+    onSend: handleMicSend,
+  })
   const { estado, setEstado } = useDebateStore()
   const explorarStore = useExplorarStore()
   const supuestosStore = useSupuestosStore()
@@ -91,6 +70,7 @@ export default function Home() {
 
   return (
     <main className="min-h-full bg-gray-950 text-white flex flex-col items-center justify-center px-4 pt-14 md:pt-0">
+      {preview && <MicPreviewModal text={preview} onConfirm={confirmPreview} onRetry={retryMic} onCancel={cancelPreview} />}
 
       {/* Header */}
       <div className="mb-8 md:mb-12 text-center px-2">
@@ -130,7 +110,7 @@ export default function Home() {
             title={grabando ? 'Detener grabación' : 'Dictar idea por voz'}
             className={`absolute bottom-3 right-3 w-9 h-9 rounded-full flex items-center justify-center transition-all ${
               grabando
-                ? 'bg-red-600 hover:bg-red-500 animate-pulse shadow-lg shadow-red-900/50'
+                ? 'bg-red-600 hover:bg-red-500 shadow-lg shadow-red-900/50'
                 : transcribiendo
                 ? 'bg-gray-600 opacity-60 cursor-not-allowed'
                 : 'bg-gray-700 hover:bg-gray-600'
@@ -149,6 +129,12 @@ export default function Home() {
             )}
           </button>
         </div>
+        {(grabando || transcribiendo) && (
+          <div className="mt-2">
+            <MicAudioBar level={audioLevel} grabando={grabando} transcribiendo={transcribiendo} />
+          </div>
+        )}
+        {errorMic && <p className="mt-2 text-xs text-red-400">{errorMic}</p>}
 
         {/* Selector de país */}
         <div className="flex items-center gap-2 mt-3 mb-1">

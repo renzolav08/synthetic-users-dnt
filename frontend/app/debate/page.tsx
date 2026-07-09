@@ -1,11 +1,14 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useDebateStore } from '@/store/useDebateStore'
 import { useExplorarStore } from '@/store/useExplorarStore'
 import { useHistorialStore } from '@/store/useHistorialStore'
+import { useMic } from '@/hooks/useMic'
+import { MicPreviewModal } from '@/components/MicPreviewModal'
+import { MicAudioBar } from '@/components/MicAudioBar'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
 const SIMLI_KEY = process.env.NEXT_PUBLIC_SIMLI_API_KEY ?? ''
@@ -284,9 +287,15 @@ export default function DebatePage() {
   const debateIniciadoRef = useRef(false)
   const [textoReplica, setTextoReplica] = useState('')
   const [enviandoReplica, setEnviandoReplica] = useState(false)
-  const [grabandoReplica, setGrabandoReplica] = useState(false)
-  const [transcribiendoReplica, setTranscribiendoReplica] = useState(false)
-  const mediaRecorderReplicaRef = useRef<MediaRecorder | null>(null)
+  const handleMicReplicaSend = useCallback((texto: string) => {
+    setTextoReplica(texto)
+    setTimeout(() => enviarReplicaRef.current(), 400)
+  }, [])
+
+  const { grabando: grabandoReplica, transcribiendo: transcribiendoReplica, audioLevel: audioLevelReplica, errorMic: errorMicReplica, preview: previewReplica, toggleMic: toggleMicReplica, confirmPreview: confirmPreviewReplica, cancelPreview: cancelPreviewReplica, retryMic: retryMicReplica } = useMic({
+    apiUrl: API,
+    onSend: handleMicReplicaSend,
+  })
   const enviarReplicaRef = useRef<() => void>(() => {})
   const [faseInteraccion, setFaseInteraccion] = useState<'debatiendo' | 'preguntando' | 'interviniendo' | 'generando_consenso' | 'finalizado'>('debatiendo')
 
@@ -546,31 +555,6 @@ export default function DebatePage() {
   // ── Replica ───────────────────────────────────────────────────────────────
   enviarReplicaRef.current = () => enviarReplica()
 
-  function toggleMicReplica() {
-    if (grabandoReplica) { mediaRecorderReplicaRef.current?.stop(); return }
-    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).then(stream => {
-      const chunks: BlobPart[] = []
-      const recorder = new MediaRecorder(stream)
-      mediaRecorderReplicaRef.current = recorder
-      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-      recorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop())
-        setGrabandoReplica(false)
-        setTranscribiendoReplica(true)
-        try {
-          const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
-          if (blob.size < 5000) { setTranscribiendoReplica(false); return }
-          const form = new FormData()
-          form.append('file', blob, 'audio.webm')
-          const res = await fetch(`${API}/transcribir`, { method: 'POST', body: form })
-          const { texto } = await res.json()
-          if (texto?.trim()) { setTextoReplica(texto.trim()); setTimeout(() => enviarReplicaRef.current(), 400) }
-        } catch {} finally { setTranscribiendoReplica(false) }
-      }
-      recorder.start()
-      setGrabandoReplica(true)
-    }).catch(() => {})
-  }
 
   async function enviarReplica() {
     const texto = textoReplica.trim()
@@ -985,9 +969,16 @@ export default function DebatePage() {
           </div>
         )}
 
+        {previewReplica && <MicPreviewModal text={previewReplica} onConfirm={confirmPreviewReplica} onRetry={retryMicReplica} onCancel={cancelPreviewReplica} />}
+
         {/* Intervención activa */}
         {faseInteraccion === 'interviniendo' && (
-          <div className="flex gap-2 items-end max-w-3xl mx-auto">
+          <div className="flex flex-col gap-2 max-w-3xl mx-auto">
+          {(grabandoReplica || transcribiendoReplica) && (
+            <MicAudioBar level={audioLevelReplica} grabando={grabandoReplica} transcribiendo={transcribiendoReplica} />
+          )}
+          {errorMicReplica && <p className="text-yellow-400 text-xs">{errorMicReplica}</p>}
+          <div className="flex gap-2 items-end">
             {/* Cámara toggle */}
             <button onClick={toggleCamara}
               className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition ${camaraActiva ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 hover:bg-gray-600'}`}>
@@ -1008,7 +999,7 @@ export default function DebatePage() {
               className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm resize-none focus:outline-none focus:border-blue-600 transition disabled:opacity-50"
             />
             <button onClick={toggleMicReplica} disabled={enviandoReplica}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition ${grabandoReplica ? 'bg-red-600 animate-pulse' : 'bg-gray-700 hover:bg-gray-600 disabled:opacity-40'}`}>
+              className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition ${grabandoReplica ? 'bg-red-600' : 'bg-gray-700 hover:bg-gray-600 disabled:opacity-40'}`}>
               <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
                 {grabandoReplica ? <rect x="6" y="6" width="12" height="12" rx="2" /> : <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zm-1 14.93A7 7 0 0 1 5 9H3a9 9 0 0 0 8 8.94V21H9v2h6v-2h-2v-2.07A9 9 0 0 0 21 9h-2a7 7 0 0 1-6 6.93z"/>}
               </svg>
@@ -1024,6 +1015,7 @@ export default function DebatePage() {
               className="text-gray-500 hover:text-gray-300 text-xs px-2 flex-shrink-0 transition">
               Cancelar
             </button>
+          </div>
           </div>
         )}
       </div>

@@ -1,12 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useExplorarStore, type PerfilSintetico, type Stakeholder, type InsightsJTBD } from '@/store/useExplorarStore'
 import { useSupuestosStore, type Supuesto } from '@/store/useSupuestosStore'
 import AvatarHablante from '@/components/AvatarHablante'
 import LlamadaExploracion from '@/components/LlamadaExploracion'
+import { useMic } from '@/hooks/useMic'
+import { MicPreviewModal } from '@/components/MicPreviewModal'
+import { MicAudioBar } from '@/components/MicAudioBar'
 
 // Imagen del avatar Simli según género (si está configurado)
 const SIMLI_IMG_F = process.env.NEXT_PUBLIC_SIMLI_IMG_F ?? ''
@@ -515,59 +518,17 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
   const insights  = insightsPor[convKey]
   const [pregunta, setPregunta] = useState('')
   const [ultimaRespuesta, setUltimaRespuesta] = useState<string | undefined>()
-  const [grabando, setGrabando] = useState(false)
-  const [transcripcionInterim, setTranscripcionInterim] = useState('')
-  const [errorMic, setErrorMic] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const enviarTextoRef = useRef<(t: string) => void>(() => {})
 
-  function toggleMicrofono() {
-    setErrorMic('')
+  const handleMicSend = useCallback((texto: string) => {
+    enviarTextoRef.current(texto)
+  }, [])
 
-    if (grabando) {
-      mediaRecorderRef.current?.stop()
-      return
-    }
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setErrorMic('Tu navegador no soporta grabación de audio.')
-      return
-    }
-
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then(stream => {
-        const chunks: BlobPart[] = []
-        const recorder = new MediaRecorder(stream)
-        mediaRecorderRef.current = recorder
-
-        recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-
-        recorder.onstop = async () => {
-          stream.getTracks().forEach(t => t.stop())
-          setGrabando(false)
-          setTranscripcionInterim('Transcribiendo...')
-          try {
-            const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
-            const form = new FormData()
-            form.append('file', blob, 'audio.webm')
-            const res = await fetch(`${API}/transcribir`, { method: 'POST', body: form })
-            const { texto } = await res.json()
-            setTranscripcionInterim('')
-            if (texto?.trim()) enviarTextoRef.current(texto.trim())
-            else setErrorMic('No se detectó voz. Intenta de nuevo.')
-          } catch {
-            setTranscripcionInterim('')
-            setErrorMic('Error al transcribir. Verifica la conexión.')
-          }
-        }
-
-        recorder.start()
-        setGrabando(true)
-        setTranscripcionInterim('')
-      })
-      .catch(() => setErrorMic('No se pudo acceder al micrófono. Verifica los permisos.'))
-  }
+  const { grabando, transcribiendo: transcripcionInterim, audioLevel, errorMic, preview, toggleMic: toggleMicrofono, confirmPreview, cancelPreview, retryMic } = useMic({
+    apiUrl: API,
+    onSend: handleMicSend,
+  })
 
   // Supuestos activos filtrados
   const supuestosActivos = supuestos.filter(s => activosIds.includes(s.id))
@@ -728,13 +689,12 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
         </div>
       )}
 
+      {preview && <MicPreviewModal text={preview} onConfirm={confirmPreview} onRetry={retryMic} onCancel={cancelPreview} />}
+
       {/* Input */}
       <div className="flex-shrink-0 space-y-1.5">
-        {/* Estado del micrófono */}
         {(grabando || transcripcionInterim) && (
-          <p className="text-red-400 text-xs px-1 truncate">
-            🎤 {transcripcionInterim || 'Grabando... da click para detener'}
-          </p>
+          <MicAudioBar level={audioLevel} grabando={grabando} transcribiendo={!!transcripcionInterim} />
         )}
         {errorMic && (
           <p className="text-yellow-400 text-xs px-1">{errorMic}</p>
@@ -756,7 +716,7 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
             title={grabando ? 'Detener grabación' : 'Grabar pregunta'}
             className={`flex-shrink-0 w-11 rounded-xl transition flex items-center justify-center text-lg
               ${grabando
-                ? 'bg-red-600 hover:bg-red-500 animate-pulse'
+                ? 'bg-red-600 hover:bg-red-500'
                 : 'bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed'
               }`}
           >

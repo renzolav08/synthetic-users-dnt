@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useExplorarStore, type PerfilSintetico } from '@/store/useExplorarStore'
+import { useMic } from '@/hooks/useMic'
+import { MicPreviewModal } from '@/components/MicPreviewModal'
+import { MicAudioBar } from '@/components/MicAudioBar'
 
 const SIMLI_KEY = process.env.NEXT_PUBLIC_SIMLI_API_KEY ?? ''
 
@@ -149,15 +152,21 @@ export default function LlamadaExploracion({
   const [hablando, setHablando] = useState(false)
   const [amplitud, setAmplitud] = useState(0)
   const amplitudRef = useRef(0)
-  const [grabando, setGrabando] = useState(false)
-  const [transcribiendo, setTranscribiendo] = useState(false)
-  const [errorMic, setErrorMic] = useState('')
   const [subtitulo, setSubtitulo] = useState('')
   const [subtituloUsuario, setSubtituloUsuario] = useState('')
   const [duracionLlamada, setDuracionLlamada] = useState(0)
   const [camaraActiva, setCamaraActiva] = useState(false)
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const handleMicSend = useCallback((texto: string) => {
+    enviarRef.current(texto)
+  }, [])
+
+  const { grabando, transcribiendo, audioLevel, errorMic, preview, toggleMic, confirmPreview, cancelPreview, retryMic } = useMic({
+    apiUrl: API,
+    onSend: handleMicSend,
+    onBeepStart: () => beep('inicio'),
+    onBeepEnd: () => beep('fin'),
+  })
   const camaraStreamRef = useRef<MediaStream | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const colgadoRef = useRef(false)
@@ -310,55 +319,9 @@ export default function LlamadaExploracion({
   // Mantener ref fresca
   enviarRef.current = enviarMensaje
 
-  function toggleMic() {
-    setErrorMic('')
-
-    if (grabando) {
-      beep('fin')
-      mediaRecorderRef.current?.stop()
-      return
-    }
-
+  function handleToggleMic() {
     if (hablando) return
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setErrorMic('Tu navegador no soporta grabación de audio.')
-      return
-    }
-
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then(stream => {
-        beep('inicio')
-        const chunks: BlobPart[] = []
-        const rec = new MediaRecorder(stream)
-        mediaRecorderRef.current = rec
-
-        rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-
-        rec.onstop = async () => {
-          stream.getTracks().forEach(t => t.stop())
-          setGrabando(false)
-          setTranscribiendo(true)
-          try {
-            const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
-            const form = new FormData()
-            form.append('file', blob, 'audio.webm')
-            const r = await fetch(`${API}/transcribir`, { method: 'POST', body: form })
-            if (!r.ok) throw new Error(`HTTP ${r.status}`)
-            const { texto } = await r.json()
-            if (texto?.trim()) enviarRef.current(texto.trim())
-            else setErrorMic('No se detectó voz. Intenta de nuevo.')
-          } catch (e) {
-            setErrorMic('Error al transcribir: ' + (e instanceof Error ? e.message : 'desconocido'))
-          } finally {
-            setTranscribiendo(false)
-          }
-        }
-
-        rec.start()
-        setGrabando(true)
-      })
-      .catch(() => setErrorMic('No se pudo acceder al micrófono.'))
+    toggleMic()
   }
 
   function toggleCamara() {
@@ -390,7 +353,6 @@ export default function LlamadaExploracion({
     colgadoRef.current = true
     abortRef.current?.abort()
     if (audioActivo) { audioActivo.pause(); audioActivo = null }
-    mediaRecorderRef.current?.stop()
     camaraStreamRef.current?.getTracks().forEach(t => t.stop())
     onColgar()
   }
@@ -532,19 +494,19 @@ export default function LlamadaExploracion({
               </div>
             </div>
           )}
-          {transcribiendo && (
-            <div className="absolute top-6 left-4 right-4">
-              <p className="text-gray-400 text-sm text-center">Transcribiendo...</p>
+          {(grabando || transcribiendo) && (
+            <div className="absolute top-6 left-4 right-4 flex justify-center">
+              <MicAudioBar level={audioLevel} grabando={grabando} transcribiendo={transcribiendo} />
             </div>
           )}
           {errorMic && !transcribiendo && (
             <div className="absolute top-6 left-4 right-4">
               <div className="bg-red-900/80 border border-red-700 rounded-xl px-4 py-2 flex items-center justify-between gap-2">
                 <p className="text-red-200 text-xs">{errorMic}</p>
-                <button onClick={() => setErrorMic('')} className="text-red-400 text-xs flex-shrink-0">✕</button>
               </div>
             </div>
           )}
+          {preview && <MicPreviewModal text={preview} onConfirm={confirmPreview} onRetry={retryMic} onCancel={cancelPreview} />}
         </div>
       </div>
 
@@ -553,7 +515,7 @@ export default function LlamadaExploracion({
 
         {/* Micrófono */}
         <button
-          onClick={toggleMic}
+          onClick={handleToggleMic}
           disabled={pensando || hablando || transcribiendo}
           className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg ${
             grabando
