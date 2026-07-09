@@ -1,10 +1,10 @@
 import { useRef, useState, useCallback } from 'react'
 
-const MIN_BLOB_SIZE = 4000     // ~4KB — filtra silencios cortos sin rechazar frases breves
+const MIN_BLOB_SIZE = 4000
 const MIN_WORDS = 1
-const SILENCE_THRESHOLD = 10   // RMS below this = silence
-const SILENCE_TIMEOUT_MS = 2800 // ms of silence before auto-stop
-const FETCH_TIMEOUT_MS = 30000  // 30s — Groq free tier puede tardar hasta 20s
+const SILENCE_THRESHOLD = 10
+const SILENCE_TIMEOUT_MS = 2800
+const FETCH_TIMEOUT_MS = 30000
 
 interface UseMicOptions {
   apiUrl: string
@@ -40,6 +40,7 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd }: UseMicOptions
       try {
         const ctx = new AudioContext()
         audioCtxRef.current = ctx
+        ctx.resume().catch(() => {})
         const source = ctx.createMediaStreamSource(stream)
         const analyser = ctx.createAnalyser()
         analyser.fftSize = 256
@@ -65,7 +66,7 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd }: UseMicOptions
         }
         animFrameRef.current = requestAnimationFrame(tick)
       } catch {
-        // AudioContext not available — silently skip level monitoring
+        // AudioContext no disponible
       }
     },
     []
@@ -78,16 +79,20 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd }: UseMicOptions
 
   const startGrabacion = useCallback(async () => {
     setErrorMic('')
+
     if (!navigator.mediaDevices?.getUserMedia) {
       setErrorMic('Tu navegador no soporta grabación de audio.')
       return
     }
+
+    // Beep ANTES del await para estar dentro del gesto del usuario
+    onBeepStart?.()
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true },
       })
       streamRef.current = stream
-      onBeepStart?.()
 
       const chunks: BlobPart[] = []
       const rec = new MediaRecorder(stream)
@@ -102,7 +107,6 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd }: UseMicOptions
         try {
           const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
 
-          // 1. Blob demasiado pequeño → no hubo voz
           if (blob.size < MIN_BLOB_SIZE) {
             setErrorMic('No se detectó voz. Acércate al micrófono e intenta de nuevo.')
             return
@@ -110,46 +114,53 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd }: UseMicOptions
 
           const form = new FormData()
           form.append('file', blob, 'audio.webm')
+
           const controller = new AbortController()
           const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
           let res: Response
           try {
-            res = await fetch(`${apiUrl}/transcribir`, { method: 'POST', body: form, signal: controller.signal })
-          } finally {
+            res = await fetch(`${apiUrl}/transcribir`, {
+              method: 'POST',
+              body: form,
+              signal: controller.signal,
+            })
             clearTimeout(timer)
+          } catch (fetchErr: any) {
+            clearTimeout(timer)
+            if (fetchErr?.name === 'AbortError') {
+              setErrorMic('La transcripción tardó demasiado. Intenta de nuevo.')
+            } else {
+              setErrorMic(`Error de red: ${fetchErr?.message ?? 'sin conexión'}`)
+            }
+            return
           }
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+          if (!res.ok) {
+            setErrorMic(`Error del servidor (${res.status}). Intenta de nuevo.`)
+            return
+          }
+
           const json = await res.json()
           const texto: string = (json.texto ?? json.transcripcion ?? '').trim()
 
-          // 2. Transcripción vacía o muy corta
-          const palabras = texto.split(/\s+/).filter(Boolean)
-          if (!texto || palabras.length < MIN_WORDS) {
+          if (!texto || texto.split(/\s+/).filter(Boolean).length < MIN_WORDS) {
             setErrorMic('No se entendió bien. ¿Puedes repetirlo con más claridad?')
             return
           }
 
-          // 3. Mostrar preview editable antes de enviar
           setPreview(texto)
         } catch (e: any) {
-          if (e?.name === 'AbortError') {
-            setErrorMic('La transcripción tardó demasiado. Intenta de nuevo.')
-          } else {
-            setErrorMic('Error al transcribir. Verifica la conexión.')
-          }
+          setErrorMic(`Error inesperado: ${e?.message ?? String(e)}`)
         } finally {
           setTranscribiendo(false)
         }
       }
 
-      _startLevelMonitor(stream, () => {
-        // Auto-stop por silencio prolongado
-        rec.stop()
-      })
-
+      _startLevelMonitor(stream, () => rec.stop())
       rec.start()
       setGrabando(true)
-    } catch {
+    } catch (e: any) {
       setErrorMic('No se pudo acceder al micrófono. Verifica los permisos.')
     }
   }, [apiUrl, onBeepStart, _stopAll, _startLevelMonitor])
