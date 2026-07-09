@@ -3,9 +3,10 @@ import { useRef, useState, useCallback } from 'react'
 const MIN_BLOB_SIZE = 6000
 const MIN_WORDS = 1
 const SILENCE_THRESHOLD = 20
-const SPEECH_THRESHOLD = 30  // RMS mínimo para considerar que hubo voz real
 const SILENCE_TIMEOUT_MS = 2800
 const FETCH_TIMEOUT_MS = 30000
+const BASELINE_MS = 600      // ms iniciales para medir ruido ambiente
+const SPEECH_RATIO = 2.5     // la voz debe ser 2.5x más fuerte que el ruido base
 
 interface UseMicOptions {
   apiUrl: string
@@ -27,7 +28,9 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd, skipPreview = f
   const audioCtxRef = useRef<AudioContext | null>(null)
   const animFrameRef = useRef<number>(0)
   const silenceStartRef = useRef<number | null>(null)
-  const maxLevelRef = useRef<number>(0)  // nivel máximo captado durante la grabación
+  const maxLevelRef = useRef<number>(0)     // nivel máximo captado durante la grabación
+  const baselineRef = useRef<number>(0)     // ruido ambiente medido al inicio
+  const baselineSamplesRef = useRef<number[]>([])
 
   const _stopAll = useCallback(() => {
     cancelAnimationFrame(animFrameRef.current)
@@ -51,11 +54,22 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd, skipPreview = f
         const data = new Uint8Array(analyser.frequencyBinCount)
         silenceStartRef.current = null
 
+        const startTime = Date.now()
         const tick = () => {
           analyser.getByteFrequencyData(data)
           const rms = Math.sqrt(data.reduce((s, v) => s + v * v, 0) / data.length)
           setAudioLevel(Math.min(100, rms * 2.5))
-          if (rms > maxLevelRef.current) maxLevelRef.current = rms
+
+          const elapsed = Date.now() - startTime
+          if (elapsed < BASELINE_MS) {
+            // Primeros 600ms: medir ruido ambiente
+            baselineSamplesRef.current.push(rms)
+            const samples = baselineSamplesRef.current
+            baselineRef.current = samples.reduce((s, v) => s + v, 0) / samples.length
+          } else {
+            // Resto: rastrear nivel máximo
+            if (rms > maxLevelRef.current) maxLevelRef.current = rms
+          }
 
           if (rms < SILENCE_THRESHOLD) {
             if (silenceStartRef.current === null) silenceStartRef.current = Date.now()
@@ -90,6 +104,8 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd, skipPreview = f
     }
 
     maxLevelRef.current = 0
+    baselineRef.current = 0
+    baselineSamplesRef.current = []
     // Beep ANTES del await para estar dentro del gesto del usuario
     onBeepStart?.()
 
@@ -112,7 +128,8 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd, skipPreview = f
         try {
           const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
 
-          if (blob.size < MIN_BLOB_SIZE || maxLevelRef.current < SPEECH_THRESHOLD) {
+          const minRequired = Math.max(15, baselineRef.current * SPEECH_RATIO)
+          if (blob.size < MIN_BLOB_SIZE || maxLevelRef.current < minRequired) {
             setErrorMic('No se detectó voz. Habla más cerca del micrófono e intenta de nuevo.')
             return
           }
