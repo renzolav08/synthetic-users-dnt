@@ -1,9 +1,10 @@
 import { useRef, useState, useCallback } from 'react'
 
-const MIN_BLOB_SIZE = 3000
+const MIN_BLOB_SIZE = 8000     // ~8KB — silencio de 4s suele quedar debajo
 const MIN_WORDS = 2
 const SILENCE_THRESHOLD = 10   // RMS below this = silence
 const SILENCE_TIMEOUT_MS = 2800 // ms of silence before auto-stop
+const FETCH_TIMEOUT_MS = 12000  // 12s máximo esperando transcripción
 
 interface UseMicOptions {
   apiUrl: string
@@ -109,7 +110,14 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd }: UseMicOptions
 
           const form = new FormData()
           form.append('file', blob, 'audio.webm')
-          const res = await fetch(`${apiUrl}/transcribir`, { method: 'POST', body: form })
+          const controller = new AbortController()
+          const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+          let res: Response
+          try {
+            res = await fetch(`${apiUrl}/transcribir`, { method: 'POST', body: form, signal: controller.signal })
+          } finally {
+            clearTimeout(timer)
+          }
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
           const json = await res.json()
           const texto: string = (json.texto ?? json.transcripcion ?? '').trim()
@@ -123,8 +131,12 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd }: UseMicOptions
 
           // 3. Mostrar preview editable antes de enviar
           setPreview(texto)
-        } catch (e) {
-          setErrorMic('Error al transcribir. Verifica la conexión.')
+        } catch (e: any) {
+          if (e?.name === 'AbortError') {
+            setErrorMic('La transcripción tardó demasiado. Intenta de nuevo.')
+          } else {
+            setErrorMic('Error al transcribir. Verifica la conexión.')
+          }
         } finally {
           setTranscribiendo(false)
         }
