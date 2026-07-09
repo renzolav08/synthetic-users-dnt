@@ -100,6 +100,7 @@ async def health():
 async def endpoint_transcribir(file: UploadFile = File(...)):
     """Transcribe audio usando Groq Whisper (gratis, sin créditos OpenAI)."""
     import os
+    import asyncio
     from groq import AsyncGroq
     audio_bytes = await file.read()
     if len(audio_bytes) < 200:
@@ -109,13 +110,21 @@ async def endpoint_transcribir(file: UploadFile = File(...)):
     filename = file.filename or "audio.webm"
     content_type = file.content_type or "audio/webm"
 
-    response = await groq_client.audio.transcriptions.create(
-        model="whisper-large-v3-turbo",
-        file=(filename, audio_bytes, content_type),
-        language="es",
-        prompt="Conversación en español latinoamericano sobre ideas de negocio y startups.",
-    )
-    return {"texto": response.text}
+    try:
+        response = await asyncio.wait_for(
+            groq_client.audio.transcriptions.create(
+                model="whisper-large-v3-turbo",
+                file=(filename, audio_bytes, content_type),
+                language="es",
+                prompt="Conversación en español latinoamericano sobre ideas de negocio y startups.",
+            ),
+            timeout=25.0
+        )
+        return {"texto": response.text}
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Transcripción tardó demasiado")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error de transcripción: {str(e)}")
 
 
 @router.post("/tts")

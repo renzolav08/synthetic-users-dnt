@@ -1,10 +1,10 @@
 import { useRef, useState, useCallback } from 'react'
 
-const MIN_BLOB_SIZE = 8000     // ~8KB — silencio de 4s suele quedar debajo
-const MIN_WORDS = 2
+const MIN_BLOB_SIZE = 4000     // ~4KB — filtra silencios cortos sin rechazar frases breves
+const MIN_WORDS = 1
 const SILENCE_THRESHOLD = 10   // RMS below this = silence
 const SILENCE_TIMEOUT_MS = 2800 // ms of silence before auto-stop
-const FETCH_TIMEOUT_MS = 12000  // 12s máximo esperando transcripción
+const FETCH_TIMEOUT_MS = 30000  // 30s — Groq free tier puede tardar hasta 20s
 
 interface UseMicOptions {
   apiUrl: string
