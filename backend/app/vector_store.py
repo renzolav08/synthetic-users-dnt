@@ -42,15 +42,15 @@ async def _get_pool() -> asyncpg.Pool | None:
         return _pool
     db_url = _get_database_url()
     if not db_url:
-        logger.warning("DATABASE_URL no configurado — vector store desactivado")
+        print("⚠️  DATABASE_URL no configurado — vector store desactivado", flush=True)
         return None
     try:
-        logger.info(f"Conectando a Postgres: {db_url[:40]}...")
+        print(f"🔌 Conectando a Postgres: {db_url[:50]}...", flush=True)
         _pool = await asyncpg.create_pool(db_url, min_size=1, max_size=5, timeout=15)
-        logger.info("Pool de Postgres creado correctamente")
+        print("✅ Pool de Postgres creado correctamente", flush=True)
         return _pool
     except Exception as e:
-        logger.error(f"No se pudo conectar a Postgres: {e}")
+        print(f"❌ No se pudo conectar a Postgres: {e}", flush=True)
         return None
 
 
@@ -88,7 +88,7 @@ async def init_tables():
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS ix_doc_session ON document_vectors(session_id)"
         )
-    logger.info("pgvector: tablas listas")
+    print("✅ pgvector: tablas listas", flush=True)
 
 
 async def _embed(texto: str) -> list[float] | None:
