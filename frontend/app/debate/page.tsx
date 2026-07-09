@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useDebateStore } from '@/store/useDebateStore'
@@ -28,8 +28,7 @@ const SIMLI_FACES_M = [
 
 function pickRandom<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)] }
 
-const SIMLI_FACE_FEMENINO  = pickRandom(SIMLI_FACES_F)
-const SIMLI_FACE_MASCULINO = pickRandom(SIMLI_FACES_M)
+const MAX_AGENTS = 5
 
 // ── Colores por rol ───────────────────────────────────────────────────────────
 const COLOR_HEX: Record<string, string> = {
@@ -174,21 +173,21 @@ function TileAgente({ rol, estadoTile, posicion, tileRef, videoSrc, slowVideoSrc
         zIndex: hablando ? 10 : 1,
       }}>
 
-      {/* Video en vivo Simli — SOLO el agente que habla (lipsync real) */}
+      {/* Video en vivo Simli — agente que habla (lipsync real, cara única) */}
       {tieneVideo && (
         <div className="absolute inset-0" style={{ bottom: 44 }}>
           <VideoMirror src={videoSrc!} />
         </div>
       )}
 
-      {/* Cara a 1fps — agentes que no hablan pero Simli está conectado */}
+      {/* Cara a 1fps — agente que ya habló, su cara propia */}
       {tieneSlowVideo && (
         <div className="absolute inset-0" style={{ bottom: 44 }}>
           <SlowMirror src={slowVideoSrc!} />
         </div>
       )}
 
-      {/* Círculo de iniciales — sin video */}
+      {/* Círculo de iniciales — mientras Simli conecta o agente pendiente */}
       {!tieneVideo && !tieneSlowVideo && (
         <>
           {hablando && <div className="absolute inset-0 pointer-events-none animate-pulse rounded-xl" style={{ background: `${color}10` }} />}
@@ -316,18 +315,16 @@ export default function DebatePage() {
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [argumentos.length])
 
   // Simli — dos conexiones: femenino (Hope) y masculino (Ong)
-  const simliVideoRefF = useRef<HTMLVideoElement>(null)
-  const simliAudioRefF = useRef<HTMLAudioElement>(null)
-  const simliVideoRefM = useRef<HTMLVideoElement>(null)
-  const simliAudioRefM = useRef<HTMLAudioElement>(null)
+  // Simli — una conexión por agente (máx 5), cara única según género
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const simliRefF = useRef<any>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const simliRefM = useRef<any>(null)
-  const [simliConectadoF, setSimliConectadoF] = useState(false)
-  const [simliConectadoM, setSimliConectadoM] = useState(false)
-  const simliConectadoFRef = useRef(false)
-  const simliConectadoMRef = useRef(false)
+  const simliRefsArr   = useRef<(any | null)[]>(Array(MAX_AGENTS).fill(null))
+  const simliConArr    = useRef<boolean[]>(Array(MAX_AGENTS).fill(false))
+  const simliVideoEls  = useRef<(HTMLVideoElement | null)[]>(Array(MAX_AGENTS).fill(null))
+  const simliAudioEls  = useRef<(HTMLAudioElement | null)[]>(Array(MAX_AGENTS).fill(null))
+  const faceIds        = useRef<(string | null)[]>(Array(MAX_AGENTS).fill(null))
+  const faceCounters   = useRef({ f: 0, m: 0 })
+  const simliInitedIdx = useRef<Set<number>>(new Set())
+  const [simliConState, setSimliConState] = useState<boolean[]>(Array(MAX_AGENTS).fill(false))
 
   const tileRefs = useRef<(HTMLDivElement | null)[]>([])
 
@@ -336,61 +333,46 @@ export default function DebatePage() {
   const videoUsuarioRef = useRef<HTMLVideoElement>(null)
   const camaraStreamRef = useRef<MediaStream | null>(null)
 
-  // ── Simli init — corre UNA sola vez al montar; espera con polling a que el debate arranque ──
-  useEffect(() => {
+  // ── Simli: inicializa la conexión del agente idx justo cuando va a hablar ──
+  // Se llama en paralelo con pedirTTSDebate para no añadir latencia
+  async function initSimliAgente(idx: number, genero: string): Promise<void> {
+    if (simliConArr.current[idx]) return          // ya conectado
+    if (simliInitedIdx.current.has(idx)) return   // ya iniciando
     if (!SIMLI_KEY || typeof window === 'undefined') return
-    let destroyed = false
-    const ESTADOS_LISTOS = new Set(['debatiendo', 'consenso', 'completado'])
+    const videoEl = simliVideoEls.current[idx]
+    const audioEl = simliAudioEls.current[idx]
+    if (!videoEl || !audioEl) return
 
-    async function initOne(
-      faceId: string,
-      videoEl: HTMLVideoElement,
-      audioEl: HTMLAudioElement,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      refSetter: (c: any) => void,
-      onConnected: () => void,
-    ) {
-      try {
-        const { SimliClient, generateSimliSessionToken, generateIceServers } = await import('simli-client')
-        if (destroyed) return
-        const { session_token } = await generateSimliSessionToken({
-          apiKey: SIMLI_KEY,
-          config: { faceId, handleSilence: true, maxSessionLength: 1800, maxIdleTime: 300 },
-        })
-        if (destroyed) return
-        const iceServers = await generateIceServers(SIMLI_KEY)
-        if (destroyed) return
-        const simli = new SimliClient(session_token, videoEl, audioEl, iceServers)
-        refSetter(simli)
-        await simli.start()
-        if (!destroyed) onConnected()
-      } catch (e) { console.error('[Simli debate]', e) }
+    simliInitedIdx.current.add(idx)
+
+    // Asignar cara única por género, sin repetir
+    if (!faceIds.current[idx]) {
+      const esFem = genero !== 'masculino'
+      faceIds.current[idx] = esFem
+        ? SIMLI_FACES_F[faceCounters.current.f++ % SIMLI_FACES_F.length]
+        : SIMLI_FACES_M[faceCounters.current.m++ % SIMLI_FACES_M.length]
     }
+    const faceId = faceIds.current[idx]!
 
-    // Esperar a que los refs de video/audio estén montados y el debate haya arrancado
-    const poll = setInterval(() => {
-      if (destroyed) { clearInterval(poll); return }
-      if (!ESTADOS_LISTOS.has(estadoRef.current)) return
-      if (!simliVideoRefF.current || !simliAudioRefF.current) return
-      if (!simliVideoRefM.current || !simliAudioRefM.current) return
-      clearInterval(poll)
-      initOne(SIMLI_FACE_FEMENINO, simliVideoRefF.current, simliAudioRefF.current,
-        c => { simliRefF.current = c },
-        () => { setSimliConectadoF(true); simliConectadoFRef.current = true },
-      )
-      initOne(SIMLI_FACE_MASCULINO, simliVideoRefM.current, simliAudioRefM.current,
-        c => { simliRefM.current = c },
-        () => { setSimliConectadoM(true); simliConectadoMRef.current = true },
-      )
-    }, 400)
-
-    return () => {
-      destroyed = true
-      clearInterval(poll)
-      // Simli se detiene en el cleanup del useEffect de desmontaje (con deps [])
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    try {
+      const { SimliClient, generateSimliSessionToken, generateIceServers } = await import('simli-client')
+      if (desmontadoRef.current) return
+      const { session_token } = await generateSimliSessionToken({
+        apiKey: SIMLI_KEY,
+        config: { faceId, handleSilence: true, maxSessionLength: 1800, maxIdleTime: 300 },
+      })
+      if (desmontadoRef.current) return
+      const iceServers = await generateIceServers(SIMLI_KEY)
+      if (desmontadoRef.current) return
+      const simli = new SimliClient(session_token, videoEl, audioEl, iceServers)
+      simliRefsArr.current[idx] = simli
+      await simli.start()
+      if (!desmontadoRef.current) {
+        simliConArr.current[idx] = true
+        setSimliConState(prev => { const next = [...prev]; next[idx] = true; return next })
+      }
+    } catch (e) { console.error(`[Simli agent ${idx}]`, e) }
+  }
 
 
   // ── TTS queue ──────────────────────────────────────────────────────────────
@@ -409,38 +391,46 @@ export default function DebatePage() {
     if (desmontadoRef.current) return
     setAgenteHablandoIdx(idx)
     setSubtituloActivo(arg.argumento)
-    const genero = (arg as { genero?: string }).genero ?? 'femenino'
-    const { wav, pcm } = await pedirTTSDebate(arg.argumento, genero)
-    if (desmontadoRef.current) return  // navegó fuera mientras pedía TTS
-    if (faseRef.current !== 'finalizado') {
-      // Enviar PCM a Simli solo para lipsync — el audio de Simli va siempre muteado
-      if (pcm) {
-        const esFem = genero !== 'masculino'
-        const simliConRef = esFem ? simliConectadoFRef : simliConectadoMRef
-        const simliInst   = esFem ? simliRefF.current  : simliRefM.current
-        if (simliConRef.current && simliInst) {
-          try {
-            const bin = atob(pcm); const bytes = new Uint8Array(bin.length)
-            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-            simliInst.sendAudioData(bytes)
-          } catch {}
+    try {
+      const genero = (arg as { genero?: string }).genero ?? 'femenino'
+      // Iniciar Simli y TTS en paralelo — ambos tardan ~2s, así no acumulamos latencia
+      const [{ wav, pcm }] = await Promise.all([
+        pedirTTSDebate(arg.argumento, genero),
+        initSimliAgente(idx, genero),
+      ])
+      if (desmontadoRef.current) return  // navegó fuera mientras pedía TTS
+      if (faseRef.current !== 'finalizado') {
+        // Enviar PCM a la conexión Simli específica de este agente (lipsync único)
+        if (pcm) {
+          const simliInst = simliRefsArr.current[idx]
+          if (simliConArr.current[idx] && simliInst) {
+            try {
+              const bin = atob(pcm); const bytes = new Uint8Array(bin.length)
+              for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+              simliInst.sendAudioData(bytes)
+            } catch {}
+          }
+        }
+        // Audio real siempre por WAV: evento 'ended' confiable, sin bleeding de Simli
+        if (wav && !desmontadoRef.current) {
+          await reproducirDebate(wav)
+        } else if (pcm && !desmontadoRef.current) {
+          const durMs = (atob(pcm).length / 2 / 16000) * 1000
+          await new Promise<void>(resolve => {
+            const t = setTimeout(resolve, durMs + 500)
+            skipAudioFn = () => { clearTimeout(t); resolve() }
+          })
         }
       }
-      // Audio real siempre por WAV: evento 'ended' confiable, sin bleeding de Simli
-      if (wav && !desmontadoRef.current) {
-        await reproducirDebate(wav)
-      } else if (pcm && !desmontadoRef.current) {
-        const durMs = (atob(pcm).length / 2 / 16000) * 1000
-        await new Promise<void>(resolve => {
-          const t = setTimeout(resolve, durMs + 500)
-          skipAudioFn = () => { clearTimeout(t); resolve() }
-        })
+    } catch (e) {
+      console.error('[TTS processQueue]', e)
+    } finally {
+      if (!desmontadoRef.current) {
+        setAgenteHablandoIdx(null)
+        setSubtituloActivo('')
+        processQueue()
       }
     }
-    if (desmontadoRef.current) return
-    setAgenteHablandoIdx(null)
-    setSubtituloActivo('')
-    processQueue()
   }
 
   useEffect(() => {
@@ -479,10 +469,11 @@ export default function DebatePage() {
       skipAudioFn?.()
       skipAudioFn = null
       if (audioDebate) { audioDebate.pause(); audioDebate = null }
-      try { simliRefF.current?.stop() } catch {}
-      try { simliRefM.current?.stop() } catch {}
-      simliConectadoFRef.current = false
-      simliConectadoMRef.current = false
+      simliRefsArr.current.forEach((s, i) => {
+        try { s?.stop() } catch {}
+        simliRefsArr.current[i] = null
+        simliConArr.current[i] = false
+      })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -793,17 +784,9 @@ export default function DebatePage() {
               const estaHablando = agenteHablandoIdx === argIdx && argIdx !== null
               const estadoTile: 'pendiente' | 'hablando' | 'completado' =
                 estaHablando ? 'hablando' : tieneArg ? 'completado' : 'pendiente'
-              const generoAgente = argIdx !== null ? (argumentos[argIdx]?.genero ?? 'femenino') : 'femenino'
-              const esMasc = generoAgente === 'masculino'
-              const simliVidF = simliConectadoF ? simliVideoRefF.current : null
-              const simliVidM = simliConectadoM ? simliVideoRefM.current : null
-              // Preferir el género correcto; si falló esa conexión, usar la disponible
-              const simliVid = esMasc
-                ? (simliVidM ?? simliVidF)
-                : (simliVidF ?? simliVidM)
-              // Video en vivo con lipsync — solo el que habla
+              // Video del agente: su propia conexión Simli con cara única
+              const simliVid = simliConState[i] ? simliVideoEls.current[i] : null
               const videoSrc: HTMLVideoElement | null = estaHablando ? simliVid : null
-              // Video a 1fps — cara visible sin lipsync para los que ya tienen argumento
               const slowVideoSrc: HTMLVideoElement | null = (!estaHablando && tieneArg) ? simliVid : null
               return (
                 <TileAgente
@@ -826,12 +809,15 @@ export default function DebatePage() {
           </div>
         )}
 
-        {/* Videos Simli ocultos — fuente para los canvas mirrors */}
-        <video ref={simliVideoRefF} autoPlay playsInline className="hidden" />
-        <video ref={simliVideoRefM} autoPlay playsInline className="hidden" />
-        {/* Audio de Simli siempre muteado — se usa solo para lipsync, el sonido sale por WAV */}
-        <audio ref={simliAudioRefF} autoPlay muted className="hidden" />
-        <audio ref={simliAudioRefM} autoPlay muted className="hidden" />
+        {/* Videos/audios Simli ocultos — uno por agente, cara única */}
+        {Array.from({ length: MAX_AGENTS }, (_, i) => (
+          <React.Fragment key={i}>
+            <video autoPlay playsInline className="hidden"
+              ref={el => { simliVideoEls.current[i] = el }} />
+            <audio autoPlay muted className="hidden"
+              ref={el => { simliAudioEls.current[i] = el }} />
+          </React.Fragment>
+        ))}
 
 
 
@@ -928,6 +914,17 @@ export default function DebatePage() {
         {/* Durante debate */}
         {faseInteraccion === 'debatiendo' && (
           <div className="flex items-center justify-center gap-2 flex-wrap">
+            {/* Cámara toggle */}
+            <button onClick={toggleCamara}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition ${camaraActiva ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 hover:bg-gray-600'}`}
+              title={camaraActiva ? 'Apagar cámara' : 'Encender cámara'}>
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                {camaraActiva
+                  ? <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+                  : <path d="M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.21 0 .39-.08.54-.18L19.73 21 21 19.73 3.27 2z"/>}
+              </svg>
+            </button>
+            <div className="w-px h-6 bg-gray-700" />
             <button onClick={togglePausa}
               className={`text-xs border px-4 py-2 rounded-lg transition font-medium flex items-center gap-1.5 ${pausado ? 'border-blue-500 bg-blue-900/30 text-blue-300' : 'border-gray-600 text-gray-300 hover:border-blue-500 hover:text-blue-300'}`}>
               {pausado ? '▶ Reanudar' : '⏸ Pausar'}
@@ -948,15 +945,24 @@ export default function DebatePage() {
 
         {/* Después del debate — elegir acción */}
         {faseInteraccion === 'preguntando' && (
-          <div className="flex items-center justify-center gap-4 flex-wrap">
+          <div className="flex items-center justify-center gap-3 flex-wrap">
             {/* Controles de media del usuario */}
             <button onClick={toggleCamara}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition ${camaraActiva ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 hover:bg-gray-600'}`}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition ${camaraActiva ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 hover:bg-gray-600'}`}
               title={camaraActiva ? 'Apagar cámara' : 'Encender cámara'}>
-              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
                 {camaraActiva
                   ? <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
                   : <path d="M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.21 0 .39-.08.54-.18L19.73 21 21 19.73 3.27 2z"/>}
+              </svg>
+            </button>
+            <button onClick={toggleSilencio}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition ${silenciado ? 'bg-yellow-700 hover:bg-yellow-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+              title={silenciado ? 'Activar sonido' : 'Silenciar'}>
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                {silenciado
+                  ? <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                  : <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>}
               </svg>
             </button>
             <div className="w-px h-8 bg-gray-700" />

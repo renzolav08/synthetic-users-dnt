@@ -59,9 +59,11 @@ load_dotenv()
 client = AsyncOpenAI(
     api_key=os.getenv("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com",
-    timeout=30.0,
-    max_retries=0,
+    timeout=60.0,
+    max_retries=2,
 )
+
+_deepseek_sem = asyncio.Semaphore(3)  # máximo 3 llamadas concurrentes a DeepSeek
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 
@@ -455,13 +457,22 @@ NO incluyas texto fuera del JSON."""
         cached["tipo"] = agente["tipo"]
         return cached
 
-    response = await client.chat.completions.create(
-        model="deepseek-chat",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        max_tokens=1000,
-        temperature=0.8
-    )
+    for intento in range(3):
+        try:
+            async with _deepseek_sem:
+                response = await client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"},
+                    max_tokens=1000,
+                    temperature=0.8
+                )
+            break
+        except Exception as e:
+            if intento == 2:
+                raise
+            await asyncio.sleep(2 ** intento)
+
     _log_tokens(session_id, response, "generar_perfil")
 
     perfil = json.loads(response.choices[0].message.content)
@@ -517,6 +528,7 @@ async def generar_argumento_agente(
     contexto: ContextoDetectado,
     insights_exploracion: dict | None = None,
     session_id: str | None = None,
+    postura_asignada: str | None = None,
 ) -> dict:
     """
     Genera el argumento adversarial de UN agente sobre la idea.
@@ -571,13 +583,37 @@ async def generar_argumento_agente(
             "  Si no usas ningún insight de exploración escribe: INSIGHT_USADO: ninguno\n"
         )
 
+    _instruccion_postura = {
+        "pro": (
+            "⚠️ POSTURA OBLIGATORIA PARA ESTE DEBATE: FAVORABLE\n"
+            "Debes argumentar A FAVOR de esta idea. Tu conclusión DEBE ser positiva.\n"
+            "- Destaca las fortalezas reales y el potencial concreto\n"
+            "- Puedes mencionar un riesgo menor, pero termina con una afirmación de valor\n"
+            "- Usa la evidencia de campo para respaldar el potencial de mercado\n"
+            "IMPORTANTE: ignorar esta instrucción y argumentar en contra es un error.\n"
+        ),
+        "contra": (
+            "⚠️ POSTURA OBLIGATORIA PARA ESTE DEBATE: CRÍTICA\n"
+            "Debes argumentar EN CONTRA de esta idea. Tu conclusión DEBE ser escéptica.\n"
+            "- Señala el riesgo o debilidad más concreto y específico\n"
+            "- Puedes reconocer algo válido, pero termina con una advertencia clara\n"
+            "IMPORTANTE: ignorar esta instrucción y argumentar a favor es un error.\n"
+        ),
+        "neutral": (
+            "⚠️ POSTURA OBLIGATORIA PARA ESTE DEBATE: NEUTRAL\n"
+            "Debes dar un argumento EQUILIBRADO. Tu conclusión NO debe ser claramente pro ni contra.\n"
+            "- Nombra un punto fuerte real Y una debilidad real, con igual peso\n"
+            "- Tu valor es mostrar la complejidad, no tomar partido\n"
+            "IMPORTANTE: decantarte claramente en un sentido es un error.\n"
+        ),
+    }.get(postura_asignada or "contra", "")
+
     prompt = (
         f"Eres {perfil['nombre']}, {perfil['ocupacion']} en {perfil['ubicacion']}.\n\n"
         f"TU PERSONALIDAD:\n"
         f"- Autopercepción: {perfil['autopercepcion']}\n"
         f"- Creencias: {', '.join(perfil.get('creencias_centrales', []))}\n"
         f"- Miedo oculto: {perfil['miedo_oculto']}\n"
-        f"- Postura sobre esta idea: {perfil['postura_debate']}\n\n"
         f"TU FORMA DE HABLAR:\n"
         f"- Formalidad: {perfil['forma_de_hablar']['formalidad']}\n"
         f"- Tono: {perfil['forma_de_hablar']['tono_emocional']}\n"
@@ -586,26 +622,26 @@ async def generar_argumento_agente(
         f"{bloque_insights}"
         f"{bloque_supuestos}\n"
         f"TU ROL EN ESTE DEBATE: {perfil['rol']}\n\n"
-        "REGLAS ESTRICTAS:\n"
+        f"{_instruccion_postura}\n"
+        "REGLAS ADICIONALES:\n"
         "- Habla SIEMPRE en primera persona como ese personaje\n"
         "- NO menciones que eres una IA\n"
         "- NO uses frases genéricas como 'Como experto...'\n"
         "- USA tu vocabulario y tono característico\n"
-        "- Se CRÍTICO y ESPECÍFICO — no valides sin cuestionar\n"
-        "- Menciona al menos UN punto débil concreto de la idea\n"
         "- Si hay evidencia de entrevistas, úsala explícitamente\n"
         "- Responde en máximo 4 oraciones directas y contundentes\n"
         "- NO uses listas ni bullets — habla naturalmente\n"
         f"{instruccion_cita}\n"
-        "Ahora da tu argumento sobre esta idea:"
+        "Ahora da tu argumento:"
     )
 
-    response = await client.chat.completions.create(
-        model="deepseek-chat",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=350,
-        temperature=0.2
-    )
+    async with _deepseek_sem:
+        response = await client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=350,
+            temperature=0.2
+        )
 
     argumento_raw = response.choices[0].message.content
 
@@ -620,26 +656,28 @@ async def generar_argumento_agente(
     else:
         argumento = argumento_raw
 
-    # Clasificar posición automáticamente
-    prompt_clasif = (
-        f"Clasifica este argumento en una sola palabra: pro, contra, o neutral.\n"
-        f"Argumento: {argumento}\n"
-        f"Responde solo con: pro, contra, o neutral"
-    )
-
     _log_tokens(session_id, response, f"argumento_{perfil['rol']}")
 
-    clasif = await client.chat.completions.create(
-        model="deepseek-chat",
-        messages=[{"role": "user", "content": prompt_clasif}],
-        max_tokens=5,
-        temperature=0
-    )
-    _log_tokens(session_id, clasif, "clasificar_posicion")
-
-    posicion = clasif.choices[0].message.content.strip().lower()
-    if posicion not in ["pro", "contra", "neutral"]:
-        posicion = "neutral"
+    # Si la postura fue asignada explícitamente, usarla directamente (sin LLM)
+    if postura_asignada in ("pro", "contra", "neutral"):
+        posicion = postura_asignada
+    else:
+        prompt_clasif = (
+            f"Clasifica este argumento en una sola palabra: pro, contra, o neutral.\n"
+            f"Argumento: {argumento}\n"
+            f"Responde solo con: pro, contra, o neutral"
+        )
+        async with _deepseek_sem:
+            clasif = await client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[{"role": "user", "content": prompt_clasif}],
+                max_tokens=5,
+                temperature=0
+            )
+        _log_tokens(session_id, clasif, "clasificar_posicion")
+        posicion = clasif.choices[0].message.content.strip().lower()
+        if posicion not in ["pro", "contra", "neutral"]:
+            posicion = "neutral"
 
     return {
         "agente_rol": perfil["rol"],
@@ -654,6 +692,26 @@ async def generar_argumento_agente(
     }
 
 
+def _asignar_posturas_debate(n: int) -> list[str]:
+    """
+    Distribuye posturas de forma balanceada para evitar que todos sean 'contra'.
+    Con 5 agentes: 2 pro, 2 contra, 1 neutral.
+    Escala proporcionalmente para otros tamaños.
+    """
+    if n <= 0:
+        return []
+    plantillas = {
+        1: ["contra"],
+        2: ["pro", "contra"],
+        3: ["pro", "contra", "neutral"],
+        4: ["pro", "contra", "contra", "neutral"],
+        5: ["pro", "pro", "contra", "contra", "neutral"],
+        6: ["pro", "pro", "contra", "contra", "neutral", "neutral"],
+        7: ["pro", "pro", "contra", "contra", "contra", "neutral", "neutral"],
+    }
+    return plantillas.get(n, (["pro", "contra", "neutral"] * ((n // 3) + 1))[:n])
+
+
 async def ejecutar_debate(
     perfiles: list,
     idea_texto: str,
@@ -664,12 +722,17 @@ async def ejecutar_debate(
     """
     Ejecuta el debate completo: todos los agentes argumentan en paralelo.
     HU-004: cada agente tiene timeout de 30s; si expira devuelve placeholder.
-    Si se proveen insights de exploración, cada agente los usa como evidencia.
+    Idea B: posturas distribuidas (pro/contra/neutral) para debate balanceado.
     """
-    async def _con_timeout(perfil):
+    posturas = _asignar_posturas_debate(len(perfiles))
+
+    async def _con_timeout(perfil, postura_asignada):
         try:
             return await asyncio.wait_for(
-                generar_argumento_agente(perfil, idea_texto, contexto, insights_exploracion, session_id),
+                generar_argumento_agente(
+                    perfil, idea_texto, contexto, insights_exploracion, session_id,
+                    postura_asignada=postura_asignada,
+                ),
                 timeout=30.0,
             )
         except asyncio.TimeoutError:
@@ -684,7 +747,7 @@ async def ejecutar_debate(
                 "timeout": True,
             }
 
-    tareas = [_con_timeout(p) for p in perfiles]
+    tareas = [_con_timeout(p, postura_asignada) for p, postura_asignada in zip(perfiles, posturas)]
     argumentos = await asyncio.gather(*tareas)
     return list(argumentos)
 
@@ -732,15 +795,16 @@ Responde a la réplica del emprendedor desde tu rol. Puedes:
 Sé directo, máximo 3-4 oraciones. Habla en primera persona como {perfil['rol']}."""
 
         try:
-            r = await asyncio.wait_for(
-                client.chat.completions.create(
-                    model="deepseek-chat",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=250,
-                    temperature=0.8,
-                ),
-                timeout=25.0
-            )
+            async with _deepseek_sem:
+                r = await asyncio.wait_for(
+                    client.chat.completions.create(
+                        model="deepseek-chat",
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=250,
+                        temperature=0.8,
+                    ),
+                    timeout=25.0
+                )
             respuesta = r.choices[0].message.content
         except asyncio.TimeoutError:
             respuesta = f"[{perfil['rol']} no pudo responder a tiempo]"
@@ -925,11 +989,12 @@ ARGUMENTOS DEL DEBATE MULTIAGENTE:
 {debate_resumen}
 
 INSTRUCCIONES:
-- Responde cada pregunta con 1 (hay evidencia razonable de esto) o 0 (no hay evidencia ni indicios).
-- Basa tus respuestas en toda la evidencia provista: exploración con usuarios, argumentos del debate y la idea misma.
-- Si la evidencia menciona el tema de forma implícita o hay indicios razonables, responde 1.
-- Responde 0 solo cuando no hay absolutamente ninguna evidencia ni mención del tema.
-- La exploración con usuarios es evidencia de primera mano: úsala para responder D1 y D2.
+- Responde cada pregunta con 1 (hay evidencia concreta y específica de esto) o 0 (no hay evidencia suficiente).
+- Basa tus respuestas ÚNICAMENTE en la evidencia provista. NO asumas ni inferas.
+- Responde 1 solo si la evidencia menciona EXPLÍCITAMENTE el tema con datos, citas o hechos concretos.
+- Responde 0 cuando la evidencia es vaga, genérica, o simplemente no menciona el tema.
+- Sé ESTRICTO: una idea bien descrita sin validación externa no garantiza 1 en D2, D3, D4, D5.
+- La exploración con usuarios es evidencia de primera mano válida para D1 y D2 únicamente si hay citas o datos específicos.
 
 PREGUNTAS (responde con arrays de enteros 0 o 1, uno por pregunta en orden):
 
@@ -1674,7 +1739,6 @@ Responde ÚNICAMENTE con un JSON con esta estructura:
     "oportunidad concreta que revelan los insights"
   ],
   "validacion_problema": "validado|parcial|no_validado",
-  "nivel_confianza": 0.0,
   "recomendacion_siguiente_paso": "acción concreta y específica para las próximas 2 semanas: qué experimento hacer, con quién, qué métrica medir y qué resultado validaría o refutaría el supuesto más crítico. Máximo 2 oraciones. NO genérico.",
   "total_perfiles_entrevistados": {total_perfiles},
   "total_stakeholders": {len(datos.conversaciones)}
@@ -1685,7 +1749,6 @@ CRITERIOS PARA validacion_problema:
 - "parcial": algunos perfiles confirman el problema pero hay inconsistencias o el problema varía por segmento
 - "no_validado": los perfiles no muestran evidencia suficiente del problema
 
-nivel_confianza: número entre 0.0 y 1.0 basado en la consistencia y profundidad de las evidencias.
 NO incluyas texto fuera del JSON."""
 
     response = await client.chat.completions.create(
@@ -1699,6 +1762,26 @@ NO incluyas texto fuera del JSON."""
     data = json.loads(response.choices[0].message.content)
     data["total_perfiles_entrevistados"] = total_perfiles
     data["total_stakeholders"] = len(datos.conversaciones)
+
+    # ── Idea A: confianza determinista — no depende del LLM ──────────────────
+    # Base según validación del problema detectada en entrevistas
+    _base_confianza = {"validado": 0.78, "parcial": 0.52, "no_validado": 0.25}
+    base = _base_confianza.get(data.get("validacion_problema", "parcial"), 0.52)
+    # Bonus por cantidad de perfiles entrevistados (más entrevistas = más evidencia)
+    factor_perfiles = min(1.0, total_perfiles / 6)  # satura a 6 perfiles
+    # Bonus por fricciones detectadas (más fricciones = problema más claro)
+    n_fricciones = len(data.get("fricciones_criticas", []))
+    factor_fricciones = min(0.10, n_fricciones * 0.025)
+    # Penalización por temores recurrentes (señal de fricción de adopción)
+    n_temores = len(data.get("temores_recurrentes", []))
+    penalizacion_temores = min(0.10, n_temores * 0.02)
+
+    nivel_confianza = round(
+        base * (0.75 + 0.25 * factor_perfiles) + factor_fricciones - penalizacion_temores,
+        2
+    )
+    nivel_confianza = max(0.15, min(0.95, nivel_confianza))
+    data["nivel_confianza"] = nivel_confianza
 
     # Evaluar supuestos si fueron provistos
     supuestos_evaluados = None

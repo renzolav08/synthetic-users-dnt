@@ -16,7 +16,6 @@ export function MicPreviewModal({ text, onConfirm, onRetry, onCancel }: Props) {
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm px-4 pb-4 sm:pb-0">
       <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-sm shadow-2xl">
         <div className="flex items-center gap-2 mb-3">
-          <span className="text-lg">🎤</span>
           <p className="text-xs text-gray-400 uppercase tracking-wider font-medium">Esto es lo que escuché</p>
         </div>
         <textarea
@@ -32,7 +31,7 @@ export function MicPreviewModal({ text, onConfirm, onRetry, onCancel }: Props) {
             onClick={onRetry}
             className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl py-2.5 text-sm font-medium transition"
           >
-            🔄 Repetir
+            Repetir
           </button>
           <button
             onClick={onCancel}
@@ -45,7 +44,7 @@ export function MicPreviewModal({ text, onConfirm, onRetry, onCancel }: Props) {
             disabled={!edited.trim()}
             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl py-2.5 text-sm font-semibold transition"
           >
-            Enviar ✓
+            Enviar
           </button>
         </div>
       </div>
