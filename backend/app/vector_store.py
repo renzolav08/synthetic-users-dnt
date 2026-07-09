@@ -60,7 +60,12 @@ async def init_tables():
     if not pool:
         return
     async with pool.acquire() as conn:
-        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        try:
+            await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        except Exception as e:
+            print(f"⚠️  pgvector no disponible en este servidor: {e}", flush=True)
+            print("   Vector store desactivado — funciona sin embeddings.", flush=True)
+            return
         await conn.execute(f"""
             CREATE TABLE IF NOT EXISTS memory_vectors (
                 id          TEXT PRIMARY KEY,
