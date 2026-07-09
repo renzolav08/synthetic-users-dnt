@@ -1,8 +1,8 @@
 import { useRef, useState, useCallback } from 'react'
 
-const MIN_BLOB_SIZE = 4000
+const MIN_BLOB_SIZE = 6000
 const MIN_WORDS = 1
-const SILENCE_THRESHOLD = 10
+const SILENCE_THRESHOLD = 20
 const SILENCE_TIMEOUT_MS = 2800
 const FETCH_TIMEOUT_MS = 30000
 

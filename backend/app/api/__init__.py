@@ -116,7 +116,7 @@ async def endpoint_transcribir(file: UploadFile = File(...)):
                 model="whisper-large-v3-turbo",
                 file=(filename, audio_bytes, content_type),
                 language="es",
-                prompt="Conversación en español latinoamericano sobre ideas de negocio y startups.",
+                prompt="Transcripción exacta en español. El usuario habla directamente al micrófono sobre ideas de negocio.",
             ),
             timeout=25.0
         )
