@@ -117,6 +117,7 @@ async def endpoint_transcribir(file: UploadFile = File(...)):
                 file=(filename, audio_bytes, content_type),
                 language="es",
                 prompt="Transcripción exacta en español. El usuario habla directamente al micrófono sobre ideas de negocio.",
+                temperature=0.0,
             ),
             timeout=25.0
         )
