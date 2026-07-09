@@ -22,18 +22,12 @@ function PasswordInput({
   value,
   onChange,
   placeholder,
-  minLen = 4,
-  showCount = false,
 }: {
   value: string
   onChange: (v: string) => void
   placeholder?: string
-  minLen?: number
-  showCount?: boolean
 }) {
   const [show, setShow] = useState(false)
-  const ok = value.length >= minLen
-
   return (
     <div className="relative">
       <input
@@ -52,13 +46,35 @@ function PasswordInput({
       >
         <EyeIcon open={show} />
       </button>
-      {showCount && value.length > 0 && (
-        <p className={`mt-1 text-xs ${ok ? 'text-green-400' : 'text-yellow-400'}`}>
-          {value.length} / {minLen} caracteres mínimos {ok ? '✓' : ''}
-        </p>
-      )}
     </div>
   )
+}
+
+type Rule = { label: string; ok: boolean }
+
+function PasswordChecklist({ rules }: { rules: Rule[] }) {
+  return (
+    <ul className="mt-2 flex flex-col gap-1">
+      {rules.map(r => (
+        <li key={r.label} className={`flex items-center gap-2 text-xs transition-colors ${r.ok ? 'text-green-400' : 'text-gray-500'}`}>
+          <span className="flex-shrink-0">{r.ok ? '✓' : '○'}</span>
+          {r.label}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function getPasswordRules(password: string, confirm?: string): Rule[] {
+  return [
+    { label: 'Mínimo 6 caracteres', ok: password.length >= 6 },
+    { label: 'Al menos una mayúscula', ok: /[A-Z]/.test(password) },
+    { label: 'Al menos un número', ok: /[0-9]/.test(password) },
+    { label: 'Sin espacios', ok: password.length > 0 && !/\s/.test(password) },
+    ...(confirm !== undefined
+      ? [{ label: 'Las contraseñas coinciden', ok: password.length > 0 && password === confirm }]
+      : []),
+  ]
 }
 
 export default function LoginPage() {
@@ -66,9 +82,13 @@ export default function LoginPage() {
   const [step, setStep] = useState<Step>('inicial')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [nombre, setNombre] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const rules = getPasswordRules(password, confirm)
+  const allRulesOk = rules.every(r => r.ok)
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault()
@@ -85,10 +105,7 @@ export default function LoginPage() {
 
   async function handleRegister(e: FormEvent) {
     e.preventDefault()
-    if (password.length < 4) {
-      setError('La contraseña debe tener al menos 4 caracteres')
-      return
-    }
+    if (!allRulesOk) return
     setError('')
     setLoading(true)
     try {
@@ -104,6 +121,7 @@ export default function LoginPage() {
     setStep('inicial')
     setError('')
     setPassword('')
+    setConfirm('')
   }
 
   return (
@@ -117,7 +135,6 @@ export default function LoginPage() {
         <span className="text-white text-xl font-semibold tracking-tight">Synthetic Users</span>
       </div>
 
-      {/* Card */}
       <div className="w-full max-w-sm">
 
         {/* ── Paso 1: opciones iniciales ── */}
@@ -128,7 +145,6 @@ export default function LoginPage() {
             </div>
 
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 flex flex-col gap-3">
-              {/* Google */}
               <button
                 type="button"
                 onClick={() => signIn('google', { callbackUrl: '/' })}
@@ -143,14 +159,12 @@ export default function LoginPage() {
                 Continuar con Google
               </button>
 
-              {/* Separador */}
               <div className="flex items-center gap-3">
                 <div className="flex-1 h-px bg-gray-800" />
                 <span className="text-gray-600 text-xs">o</span>
                 <div className="flex-1 h-px bg-gray-800" />
               </div>
 
-              {/* Email */}
               <button
                 type="button"
                 onClick={() => setStep('login')}
@@ -165,7 +179,7 @@ export default function LoginPage() {
           </>
         )}
 
-        {/* ── Paso 2: login con email ── */}
+        {/* ── Paso 2: login ── */}
         {step === 'login' && (
           <>
             <div className="text-center mb-8">
@@ -189,11 +203,7 @@ export default function LoginPage() {
                 </div>
                 <div>
                   <label className="block text-sm text-gray-400 mb-1.5">Contraseña</label>
-                  <PasswordInput
-                    value={password}
-                    onChange={setPassword}
-                    placeholder="••••••••"
-                  />
+                  <PasswordInput value={password} onChange={setPassword} placeholder="••••••••" />
                 </div>
 
                 {error && <p className="text-red-400 text-xs text-center">{error}</p>}
@@ -255,27 +265,36 @@ export default function LoginPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1.5">
-                    Contraseña
-                    <span className="ml-1 text-gray-600 font-normal">(mín. 4 caracteres)</span>
-                  </label>
+                  <label className="block text-sm text-gray-400 mb-1.5">Contraseña</label>
                   <PasswordInput
                     value={password}
                     onChange={setPassword}
-                    placeholder="Al menos 4 caracteres"
-                    minLen={4}
-                    showCount
+                    placeholder="Ej: Prueba1"
                   />
+                  {password.length > 0 && <PasswordChecklist rules={getPasswordRules(password)} />}
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1.5">Confirmar contraseña</label>
+                  <PasswordInput
+                    value={confirm}
+                    onChange={setConfirm}
+                    placeholder="Repite la contraseña"
+                  />
+                  {confirm.length > 0 && (
+                    <p className={`mt-1 text-xs ${password === confirm ? 'text-green-400' : 'text-yellow-400'}`}>
+                      {password === confirm ? '✓ Las contraseñas coinciden' : '○ Las contraseñas no coinciden'}
+                    </p>
+                  )}
                 </div>
 
                 {error && <p className="text-red-400 text-xs text-center">{error}</p>}
 
                 <button
                   type="submit"
-                  disabled={loading || password.length < 4}
+                  disabled={loading || !allRulesOk}
                   className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl py-3 text-sm font-semibold transition-all mt-1"
                 >
-                  {loading ? 'Creando cuenta...' : 'Continuar con Email'}
+                  {loading ? 'Creando cuenta...' : 'Crear cuenta'}
                 </button>
               </form>
 
