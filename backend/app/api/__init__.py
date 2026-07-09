@@ -56,8 +56,8 @@ async def register(data: RegisterInput):
     from app.auth import USERS
     if data.email in USERS or await user_exists(data.email):
         raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese correo")
-    if len(data.password) < 6:
-        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
+    if len(data.password) < 4:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 4 caracteres")
     hashed = hash_password(data.password)
     await create_user(data.email, data.nombre, hashed)
     token = create_access_token({"sub": data.email, "nombre": data.nombre})
