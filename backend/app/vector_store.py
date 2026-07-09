@@ -14,12 +14,19 @@ from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
 _EMBED_MODEL = "text-embedding-3-small"
 _EMBED_DIM   = 1536
 
 _pool: asyncpg.Pool | None = None
 _openai_client: AsyncOpenAI | None = None
+
+
+def _get_database_url() -> str:
+    url = os.getenv("DATABASE_URL", "")
+    # asyncpg requiere postgresql://, Render provee postgres://
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    return url
 
 
 def _openai() -> AsyncOpenAI:
@@ -33,11 +40,14 @@ async def _get_pool() -> asyncpg.Pool | None:
     global _pool
     if _pool is not None:
         return _pool
-    if not DATABASE_URL:
+    db_url = _get_database_url()
+    if not db_url:
         logger.warning("DATABASE_URL no configurado — vector store desactivado")
         return None
     try:
-        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5, timeout=10)
+        logger.info(f"Conectando a Postgres: {db_url[:40]}...")
+        _pool = await asyncpg.create_pool(db_url, min_size=1, max_size=5, timeout=15)
+        logger.info("Pool de Postgres creado correctamente")
         return _pool
     except Exception as e:
         logger.error(f"No se pudo conectar a Postgres: {e}")
