@@ -11,9 +11,10 @@ interface UseMicOptions {
   onSend: (text: string) => void
   onBeepStart?: () => void
   onBeepEnd?: () => void
+  skipPreview?: boolean
 }
 
-export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd }: UseMicOptions) {
+export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd, skipPreview = false }: UseMicOptions) {
   const [grabando, setGrabando] = useState(false)
   const [transcribiendo, setTranscribiendo] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
@@ -149,7 +150,11 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd }: UseMicOptions
             return
           }
 
-          setPreview(texto)
+          if (skipPreview) {
+            onSend(texto)
+          } else {
+            setPreview(texto)
+          }
         } catch (e: any) {
           setErrorMic(`Error inesperado: ${e?.message ?? String(e)}`)
         } finally {

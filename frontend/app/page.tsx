@@ -41,11 +41,12 @@ export default function Home() {
     setTexto(prev => prev ? prev + ' ' + transcrito : transcrito)
   }, [])
 
-  const { grabando, transcribiendo, audioLevel, errorMic, preview, toggleMic, confirmPreview, cancelPreview, retryMic } = useMic({
+  const { grabando, transcribiendo, audioLevel, errorMic, toggleMic } = useMic({
     apiUrl: API,
     onSend: handleMicSend,
     onBeepStart: () => beep('inicio'),
     onBeepEnd: () => beep('fin'),
+    skipPreview: true,
   })
   const { estado, setEstado } = useDebateStore()
   const explorarStore = useExplorarStore()
@@ -82,7 +83,6 @@ export default function Home() {
 
   return (
     <main className="min-h-full bg-gray-950 text-white flex flex-col items-center justify-center px-4 pt-14 md:pt-0">
-      {preview && <MicPreviewModal text={preview} onConfirm={confirmPreview} onRetry={retryMic} onCancel={cancelPreview} />}
 
       {/* Header */}
       <div className="mb-8 md:mb-12 text-center px-2">
