@@ -1400,7 +1400,7 @@ REGLAS ESTRICTAS:
     contexto_memoria = ""
     if session_id:
         from app.memory import guardar_turno, recuperar_contexto
-        turnos_relevantes = recuperar_contexto(session_id, pregunta, n=4)
+        turnos_relevantes = await recuperar_contexto(session_id, pregunta, n=4)
         if turnos_relevantes:
             fragmentos = "\n".join(f'[{t["rol"]}]: {t["texto"][:200]}' for t in turnos_relevantes)
             contexto_memoria = f"\n\nCONTEXTO PREVIO RELEVANTE DE ESTA CONVERSACIÓN:\n{fragmentos}"
@@ -1424,11 +1424,12 @@ REGLAS ESTRICTAS:
 
     respuesta = response.choices[0].message.content
 
-    # Guardar turno en memoria vectorial
+    # Guardar turno en memoria vectorial (fire-and-forget, no bloquea la respuesta)
     if session_id:
+        import asyncio
         from app.memory import guardar_turno
-        guardar_turno(session_id, "emprendedor", pregunta)
-        guardar_turno(session_id, perfil['nombre'], respuesta)
+        asyncio.create_task(guardar_turno(session_id, "emprendedor", pregunta))
+        asyncio.create_task(guardar_turno(session_id, perfil['nombre'], respuesta))
 
     insights = None
     if len(historial) >= 4:

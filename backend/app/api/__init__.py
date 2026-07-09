@@ -363,7 +363,7 @@ async def endpoint_conversar(conv: ConversacionInput):
     # Enriquecer pregunta con contexto RAG si hay documentos indexados
     pregunta_enriquecida = conv.pregunta
     if session_id:
-        fragmentos = buscar_en_documentos(session_id, conv.pregunta, n=3)
+        fragmentos = await buscar_en_documentos(session_id, conv.pregunta, n=3)
         if fragmentos:
             contexto_rag = "\n".join(f'[Doc: {f["nombre"]}] {f["texto"]}' for f in fragmentos)
             pregunta_enriquecida = f"{conv.pregunta}\n\n[CONTEXTO DE DOCUMENTOS DEL EMPRENDEDOR]\n{contexto_rag}"
@@ -405,14 +405,14 @@ async def subir_documento(
     if not texto.strip():
         raise HTTPException(status_code=400, detail="El documento está vacío o no se pudo extraer texto")
 
-    chunks = indexar_documento(session_id, file.filename or "documento", texto)
+    chunks = await indexar_documento(session_id, file.filename or "documento", texto)
     return {"ok": True, "chunks_indexados": chunks, "nombre": file.filename}
 
 
 @router.get("/explorar/documentos")
 async def listar_docs(session_id: str):
     """Lista los documentos indexados para una sesión."""
-    return {"documentos": listar_documentos(session_id)}
+    return {"documentos": await listar_documentos(session_id)}
 
 
 @router.post("/explorar/patrones")

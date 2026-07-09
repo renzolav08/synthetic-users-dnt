@@ -10,6 +10,8 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    from app.vector_store import init_tables
+    await init_tables()
     yield
 
 app = FastAPI(
