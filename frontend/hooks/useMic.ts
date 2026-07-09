@@ -3,6 +3,7 @@ import { useRef, useState, useCallback } from 'react'
 const MIN_BLOB_SIZE = 6000
 const MIN_WORDS = 1
 const SILENCE_THRESHOLD = 20
+const SPEECH_THRESHOLD = 30  // RMS mínimo para considerar que hubo voz real
 const SILENCE_TIMEOUT_MS = 2800
 const FETCH_TIMEOUT_MS = 30000
 
@@ -26,6 +27,7 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd, skipPreview = f
   const audioCtxRef = useRef<AudioContext | null>(null)
   const animFrameRef = useRef<number>(0)
   const silenceStartRef = useRef<number | null>(null)
+  const maxLevelRef = useRef<number>(0)  // nivel máximo captado durante la grabación
 
   const _stopAll = useCallback(() => {
     cancelAnimationFrame(animFrameRef.current)
@@ -53,6 +55,7 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd, skipPreview = f
           analyser.getByteFrequencyData(data)
           const rms = Math.sqrt(data.reduce((s, v) => s + v * v, 0) / data.length)
           setAudioLevel(Math.min(100, rms * 2.5))
+          if (rms > maxLevelRef.current) maxLevelRef.current = rms
 
           if (rms < SILENCE_THRESHOLD) {
             if (silenceStartRef.current === null) silenceStartRef.current = Date.now()
@@ -86,6 +89,7 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd, skipPreview = f
       return
     }
 
+    maxLevelRef.current = 0
     // Beep ANTES del await para estar dentro del gesto del usuario
     onBeepStart?.()
 
@@ -108,8 +112,8 @@ export function useMic({ apiUrl, onSend, onBeepStart, onBeepEnd, skipPreview = f
         try {
           const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
 
-          if (blob.size < MIN_BLOB_SIZE) {
-            setErrorMic('No se detectó voz. Acércate al micrófono e intenta de nuevo.')
+          if (blob.size < MIN_BLOB_SIZE || maxLevelRef.current < SPEECH_THRESHOLD) {
+            setErrorMic('No se detectó voz. Habla más cerca del micrófono e intenta de nuevo.')
             return
           }
 
