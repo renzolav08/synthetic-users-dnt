@@ -23,6 +23,7 @@ from app.services import (
 )
 from app.db import save_debate, get_debates, get_debate, save_encuesta
 from app.rag import indexar_documento, buscar_en_documentos, listar_documentos
+from app.services.debate_graph import debate_graph
 import base64
 import json
 import asyncio
@@ -222,60 +223,72 @@ async def evaluar_idea(idea: IdeaInput):
 @router.post("/evaluar-stream")
 async def evaluar_stream(idea: IdeaInput):
     """
-    Pipeline completo con streaming SSE.
-    Genera session_id, propaga tokens, guarda en DB al finalizar.
+    Pipeline completo con streaming SSE usando LangGraph StateGraph.
+
+    El grafo ejecuta los nodos secuencialmente:
+      detectar_contexto → buscar_web → generar_perfiles
+        → debate_agente_0 → ... → debate_agente_N → generar_consenso
+
+    Cada nodo del grafo emite un evento SSE al frontend en cuanto termina,
+    manteniendo la experiencia de tiempo real.
+    LangSmith (si LANGCHAIN_API_KEY está configurado) traza cada nodo.
     """
     async def generar():
         session_id = str(uuid.uuid4())
         yield f"data: {json.dumps({'tipo': 'session_id', 'session_id': session_id})}\n\n"
 
-        # Nodo 1
-        contexto = await detectar_contexto(idea.idea_texto, pais_sugerido=idea.pais)
-        yield f"data: {json.dumps({'tipo': 'contexto', 'data': contexto.model_dump()})}\n\n"
+        state_input = {
+            "idea_texto": idea.idea_texto,
+            "pais": idea.pais,
+            "session_id": session_id,
+            "insights_exploracion": idea.insights_exploracion,
+            "argumentos": [],
+        }
 
-        # Nodo 2
-        datos_web = await buscar_contexto_web(contexto)
-        yield f"data: {json.dumps({'tipo': 'datos_web', 'data': datos_web})}\n\n"
+        argumentos_acumulados = []
+        contexto_final = None
 
-        # Nodo 3
-        perfiles = await generar_todos_los_perfiles(contexto, datos_web, session_id)
-        perfiles = perfiles[:5]  # hard cap: nunca más de 5 agentes en el debate
-        yield f"data: {json.dumps({'tipo': 'perfiles_listos', 'total': len(perfiles)})}\n\n"
+        # ── Iterar sobre los chunks del grafo (un chunk por nodo completado) ──
+        async for chunk in debate_graph.astream(state_input):
+            for node_name, node_output in chunk.items():
+                fase = node_output.get("fase_actual", "")
 
-        # Nodo 4 — cada agente en cuanto termina (con timeout HU-004)
-        tareas = [
-            ejecutar_debate([p], idea.idea_texto, contexto, idea.insights_exploracion, session_id)
-            for p in perfiles
-        ]
+                if fase == "contexto":
+                    contexto_final = node_output["contexto"]
+                    yield f"data: {json.dumps({'tipo': 'contexto', 'data': contexto_final})}\n\n"
 
-        argumentos = []
-        for coro in asyncio.as_completed(tareas):
-            resultado = await coro
-            arg = resultado[0]
-            argumentos.append(arg)
-            yield f"data: {json.dumps({'tipo': 'argumento', 'data': arg})}\n\n"
+                elif fase == "datos_web":
+                    yield f"data: {json.dumps({'tipo': 'datos_web', 'data': node_output['datos_web']})}\n\n"
 
-        # Nodo 5
-        consenso = await generar_consenso(
-            argumentos, idea.idea_texto, contexto, session_id,
-            insights_exploracion=idea.insights_exploracion,
-        )
-        yield f"data: {json.dumps({'tipo': 'consenso', 'data': consenso})}\n\n"
+                elif fase == "perfiles_listos":
+                    total = len(node_output.get("perfiles") or [])
+                    yield f"data: {json.dumps({'tipo': 'perfiles_listos', 'total': total})}\n\n"
 
-        # TA-001/TA-002: guardar sesión en DB con tokens
-        try:
-            tokens = get_session_tokens(session_id)
-            await save_debate(
-                session_id=session_id,
-                idea_texto=idea.idea_texto,
-                contexto=contexto.model_dump(),
-                argumentos=argumentos,
-                arbol=consenso,
-                tokens_in=tokens["tokens_in"],
-                tokens_out=tokens["tokens_out"],
-            )
-        except Exception:
-            pass  # no bloquear el stream si falla el guardado
+                elif fase.startswith("argumento_") and not fase.endswith("_skip"):
+                    nuevos = node_output.get("argumentos") or []
+                    for arg in nuevos:
+                        argumentos_acumulados.append(arg)
+                        yield f"data: {json.dumps({'tipo': 'argumento', 'data': arg})}\n\n"
+
+                elif fase == "consenso":
+                    consenso = node_output["consenso"]
+                    yield f"data: {json.dumps({'tipo': 'consenso', 'data': consenso})}\n\n"
+
+                    # Guardar en DB tras el consenso
+                    try:
+                        from app.schemas import ContextoDetectado as CD
+                        tokens = get_session_tokens(session_id)
+                        await save_debate(
+                            session_id=session_id,
+                            idea_texto=idea.idea_texto,
+                            contexto=contexto_final or {},
+                            argumentos=argumentos_acumulados,
+                            arbol=consenso,
+                            tokens_in=tokens["tokens_in"],
+                            tokens_out=tokens["tokens_out"],
+                        )
+                    except Exception:
+                        pass
 
         yield f"data: {json.dumps({'tipo': 'fin'})}\n\n"
 

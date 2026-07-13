@@ -129,13 +129,22 @@ async function pedirTTSDebate(texto: string, genero: string): Promise<{ wav: str
 
 let audioDebate: HTMLAudioElement | null = null
 let skipAudioFn: (() => void) | null = null
+let _audioMuted = false   // estado global de mute — sincronizado con silenciadoRef
 
 function reproducirDebate(wavB64: string): Promise<void> {
   return new Promise(resolve => {
     if (audioDebate) { audioDebate.pause(); audioDebate = null }
     const el = new Audio(`data:audio/wav;base64,${wavB64}`)
+    el.muted = _audioMuted   // respetar el estado de mute al crear el elemento
     audioDebate = el
-    const done = () => { audioDebate = null; skipAudioFn = null; resolve() }
+    let resolved = false
+    const done = () => {
+      if (resolved) return   // evitar doble resolución
+      resolved = true
+      audioDebate = null
+      skipAudioFn = null
+      resolve()
+    }
     el.onended = done
     el.onerror = done
     el.play().catch(done)
@@ -145,20 +154,22 @@ function reproducirDebate(wavB64: string): Promise<void> {
 
 
 // ── Tile agente — estilo Meet ─────────────────────────────────────────────────
-function TileAgente({ rol, estadoTile, posicion, tileRef, videoSrc, slowVideoSrc }: {
+function TileAgente({ rol, estadoTile, posicion, tileRef, videoSrc, slowVideoSrc, capturedFrame }: {
   rol: string
   estadoTile: 'pendiente' | 'hablando' | 'completado'
   posicion?: string
   tileRef?: (el: HTMLDivElement | null) => void
   videoSrc?: HTMLVideoElement | null
   slowVideoSrc?: HTMLVideoElement | null
+  capturedFrame?: string | null
 }) {
   const color = COLOR_HEX[rol] || '#6b7280'
   const inicial = INICIAL_ROL[rol] ?? rol.slice(0, 2).toUpperCase()
   const hablando = estadoTile === 'hablando'
   const completado = estadoTile === 'completado'
   const tieneVideo = !!videoSrc
-  const tieneSlowVideo = !!slowVideoSrc && !tieneVideo
+  const tieneCapturedFrame = !!capturedFrame && !tieneVideo
+  const tieneSlowVideo = !!slowVideoSrc && !tieneVideo && !tieneCapturedFrame
 
   return (
     <div ref={tileRef} className="relative rounded-xl overflow-hidden flex flex-col items-center justify-center min-h-0 transition-all duration-300"
@@ -180,7 +191,16 @@ function TileAgente({ rol, estadoTile, posicion, tileRef, videoSrc, slowVideoSrc
         </div>
       )}
 
-      {/* Cara a 1fps — agente que ya habló, su cara propia */}
+      {/* Frame capturado — cara estática del agente que ya habló (no requiere stream activo) */}
+      {tieneCapturedFrame && (
+        <div className="absolute inset-0" style={{ bottom: 44 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={capturedFrame!} alt="" className="absolute inset-0 w-full h-full"
+            style={{ objectFit: 'cover', filter: 'brightness(0.78)' }} />
+        </div>
+      )}
+
+      {/* Cara a 1fps — agente que ya habló pero cuyo stream aún está activo */}
       {tieneSlowVideo && (
         <div className="absolute inset-0" style={{ bottom: 44 }}>
           <SlowMirror src={slowVideoSrc!} />
@@ -328,8 +348,28 @@ export default function DebatePage() {
 
   const tileRefs = useRef<(HTMLDivElement | null)[]>([])
 
+  // Frames capturados de cada agente (dataURL) — para mostrar cara estática sin stream activo
+  const capturedFrames = useRef<(string | null)[]>(Array(MAX_AGENTS).fill(null))
+  const [capturedFrameState, setCapturedFrameState] = useState<(string | null)[]>(Array(MAX_AGENTS).fill(null))
+
+  function captureFrame(idx: number) {
+    const videoEl = simliVideoEls.current[idx]
+    if (!videoEl || videoEl.videoWidth === 0 || videoEl.readyState < 2) return
+    try {
+      const c = document.createElement('canvas')
+      c.width = videoEl.videoWidth; c.height = videoEl.videoHeight
+      c.getContext('2d')?.drawImage(videoEl, 0, 0)
+      const dataUrl = c.toDataURL('image/jpeg', 0.85)
+      if (dataUrl && dataUrl !== 'data:,') {
+        capturedFrames.current[idx] = dataUrl
+        setCapturedFrameState(prev => { const n = [...prev]; n[idx] = dataUrl; return n })
+      }
+    } catch {}
+  }
+
   // User media
   const [camaraActiva, setCamaraActiva] = useState(false)
+  const [errorCamara, setErrorCamara] = useState<string | null>(null)
   const videoUsuarioRef = useRef<HTMLVideoElement>(null)
   const camaraStreamRef = useRef<MediaStream | null>(null)
 
@@ -354,24 +394,34 @@ export default function DebatePage() {
     }
     const faceId = faceIds.current[idx]!
 
-    try {
-      const { SimliClient, generateSimliSessionToken, generateIceServers } = await import('simli-client')
-      if (desmontadoRef.current) return
-      const { session_token } = await generateSimliSessionToken({
-        apiKey: SIMLI_KEY,
-        config: { faceId, handleSilence: true, maxSessionLength: 1800, maxIdleTime: 300 },
-      })
-      if (desmontadoRef.current) return
-      const iceServers = await generateIceServers(SIMLI_KEY)
-      if (desmontadoRef.current) return
-      const simli = new SimliClient(session_token, videoEl, audioEl, iceServers)
-      simliRefsArr.current[idx] = simli
-      await simli.start()
-      if (!desmontadoRef.current) {
-        simliConArr.current[idx] = true
-        setSimliConState(prev => { const next = [...prev]; next[idx] = true; return next })
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 2000))
+        if (desmontadoRef.current) return
+        const { SimliClient, generateSimliSessionToken, generateIceServers } = await import('simli-client')
+        if (desmontadoRef.current) return
+        const { session_token } = await generateSimliSessionToken({
+          apiKey: SIMLI_KEY,
+          config: { faceId, handleSilence: true, maxSessionLength: 600, maxIdleTime: 120 },
+        })
+        if (desmontadoRef.current) return
+        const iceServers = await generateIceServers(SIMLI_KEY)
+        if (desmontadoRef.current) return
+        const simli = new SimliClient(session_token, videoEl, audioEl, iceServers)
+        simliRefsArr.current[idx] = simli
+        await simli.start()
+        // Forzar mute del audio Simli — el audio real se reproduce por WAV independientemente
+        if (audioEl) { audioEl.muted = true; audioEl.volume = 0 }
+        if (!desmontadoRef.current) {
+          simliConArr.current[idx] = true
+          setSimliConState(prev => { const next = [...prev]; next[idx] = true; return next })
+        }
+        return  // éxito
+      } catch (e) {
+        console.error(`[Simli agent ${idx}] intento ${attempt + 1}`, e)
+        if (attempt === 2) simliInitedIdx.current.delete(idx)  // permite reintento externo
       }
-    } catch (e) { console.error(`[Simli agent ${idx}]`, e) }
+    }
   }
 
 
@@ -393,6 +443,13 @@ export default function DebatePage() {
     setSubtituloActivo(arg.argumento)
     try {
       const genero = (arg as { genero?: string }).genero ?? 'femenino'
+      // Liberar sesión Simli de hace 2 turnos para evitar el límite de 2 sesiones concurrentes.
+      // SlowMirror sigue mostrando la cara porque dibuja en canvas independientemente del stream.
+      const prevPrevIdx = idx - 2
+      if (prevPrevIdx >= 0 && simliRefsArr.current[prevPrevIdx]) {
+        try { simliRefsArr.current[prevPrevIdx]?.stop() } catch {}
+        simliRefsArr.current[prevPrevIdx] = null
+      }
       // Iniciar Simli y TTS en paralelo — ambos tardan ~2s, así no acumulamos latencia
       const [{ wav, pcm }] = await Promise.all([
         pedirTTSDebate(arg.argumento, genero),
@@ -414,12 +471,15 @@ export default function DebatePage() {
         // Audio real siempre por WAV: evento 'ended' confiable, sin bleeding de Simli
         if (wav && !desmontadoRef.current) {
           await reproducirDebate(wav)
+          // Capturar el último frame del avatar justo al terminar de hablar
+          captureFrame(idx)
         } else if (pcm && !desmontadoRef.current) {
           const durMs = (atob(pcm).length / 2 / 16000) * 1000
           await new Promise<void>(resolve => {
             const t = setTimeout(resolve, durMs + 500)
             skipAudioFn = () => { clearTimeout(t); resolve() }
           })
+          captureFrame(idx)
         }
       }
     } catch (e) {
@@ -481,9 +541,10 @@ export default function DebatePage() {
   function toggleSilencio() {
     const nuevoValor = !silenciadoRef.current
     silenciadoRef.current = nuevoValor
+    _audioMuted = nuevoValor          // sincronizar flag global para nuevos elementos
     setSilenciado(nuevoValor)
     if (audioDebate) audioDebate.muted = nuevoValor
-    // Simli audio siempre muteado — no tocar
+    // Simli audio siempre en volumen 0 — no tocar
   }
 
   function togglePausa() {
@@ -608,13 +669,31 @@ export default function DebatePage() {
       camaraStreamRef.current?.getTracks().forEach(t => t.stop())
       camaraStreamRef.current = null
       if (videoUsuarioRef.current) videoUsuarioRef.current.srcObject = null
-      setCamaraActiva(false); return
+      setCamaraActiva(false)
+      setErrorCamara(null)
+      return
+    }
+    setErrorCamara(null)
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setErrorCamara('Tu navegador no soporta acceso a cámara')
+      return
     }
     navigator.mediaDevices.getUserMedia({ video: true, audio: false }).then(stream => {
       camaraStreamRef.current = stream
-      if (videoUsuarioRef.current) videoUsuarioRef.current.srcObject = stream
+      if (videoUsuarioRef.current) {
+        videoUsuarioRef.current.srcObject = stream
+        videoUsuarioRef.current.play().catch(() => {})
+      }
       setCamaraActiva(true)
-    }).catch(() => {})
+    }).catch((err: Error) => {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setErrorCamara('Permiso de cámara denegado. Habilítalo en el navegador.')
+      } else if (err.name === 'NotFoundError') {
+        setErrorCamara('No se encontró ninguna cámara.')
+      } else {
+        setErrorCamara('No se pudo acceder a la cámara.')
+      }
+    })
   }
 
   function exportarCSV() {
@@ -796,6 +875,7 @@ export default function DebatePage() {
                   estadoTile={estadoTile}
                   videoSrc={videoSrc}
                   slowVideoSrc={slowVideoSrc}
+                  capturedFrame={capturedFrameState[i]}
                   posicion={argIdx !== null ? argumentos[argIdx]?.posicion : undefined}
                 />
               )
@@ -815,7 +895,10 @@ export default function DebatePage() {
             <video autoPlay playsInline className="hidden"
               ref={el => { simliVideoEls.current[i] = el }} />
             <audio autoPlay muted className="hidden"
-              ref={el => { simliAudioEls.current[i] = el }} />
+              ref={el => {
+                if (el) { el.muted = true; el.volume = 0 }
+                simliAudioEls.current[i] = el
+              }} />
           </React.Fragment>
         ))}
 
@@ -911,6 +994,11 @@ export default function DebatePage() {
 
       {/* ── Barra de controles inferior ─────────────────────────────────────── */}
       <div className="flex-shrink-0 bg-gray-900/95 border-t border-gray-800 px-3 md:px-4 py-2 md:py-3">
+        {/* Error de cámara */}
+        {errorCamara && (
+          <p className="text-center text-xs text-yellow-400 mb-1">{errorCamara}</p>
+        )}
+
         {/* Durante debate */}
         {faseInteraccion === 'debatiendo' && (
           <div className="flex items-center justify-center gap-2 flex-wrap">
