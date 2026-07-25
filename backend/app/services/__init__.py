@@ -1755,13 +1755,14 @@ async def sintetizar_exploracion(datos: SintesisInput) -> SintesisExploracion:
                     rol_label = "Emprendedor" if msg.get("rol") == "emprendedor" else perfil.nombre
                     resumen_conversaciones += f"  {rol_label}: {msg.get('contenido', '')[:200]}\n"
 
-    prompt = f"""Eres un investigador de UX y Customer Discovery senior. Acabas de supervisar una sesión
-completa de entrevistas con usuarios sintéticos para validar una idea de negocio.
+    # Limitar resumen para no saturar el contexto del modelo
+    resumen_conversaciones = resumen_conversaciones[:4000]
 
-IDEA DEL EMPRENDEDOR:
-{datos.idea_texto}
+    prompt = f"""Eres un investigador de UX senior. Sintetiza las entrevistas de usuario.
 
-RESUMEN DE {total_perfiles} PERFILES ENTREVISTADOS EN {len(datos.conversaciones)} SEGMENTOS:
+IDEA: {datos.idea_texto[:300]}
+
+RESUMEN DE {total_perfiles} PERFILES EN {len(datos.conversaciones)} SEGMENTOS:
 {resumen_conversaciones}
 
 Analiza toda esta información y genera el informe de síntesis de exploración.
@@ -1812,7 +1813,7 @@ NO incluyas texto fuera del JSON."""
         model="deepseek-v4-flash",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=2000,
+        max_tokens=4000,
         temperature=0.3
     )
 
