@@ -1006,7 +1006,7 @@ async def evaluar_rubrica_tbi(
             if refutados:  bloque_insights += f"Supuestos refutados ({len(refutados)}): {_fmt(refutados)}\n"
 
     debate_resumen = "\n".join(
-        f"- {a['agente_rol']} ({a.get('posicion','neutral')}): {a['argumento'][:400]}"
+        f"- {a['agente_rol']} ({a.get('posicion','neutral')}): {a['argumento'][:200]}"
         for a in argumentos
     )
 
@@ -1076,11 +1076,16 @@ Responde ÚNICAMENTE con este JSON (sin texto adicional):
         model="deepseek-v4-flash",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=1500,
+        max_tokens=2000,
         temperature=0,
     )
 
-    raw = _parse_json_safe(response.choices[0].message.content)
+    contenido = (response.choices[0].message.content or "").strip()
+    if not contenido:
+        # Fallback: rúbrica neutral si el modelo no respondió
+        raw = {"d1": [0]*15, "d2": [0]*12, "d3": [0]*13, "d4": [0]*12, "d5": [0]*8}
+    else:
+        raw = _parse_json_safe(contenido)
 
     # Validar longitudes y recortar/rellenar si GPT devuelve algo incorrecto
     esperados = {"d1": 15, "d2": 12, "d3": 13, "d4": 12, "d5": 8}
