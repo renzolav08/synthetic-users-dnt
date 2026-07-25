@@ -700,16 +700,17 @@ async def generar_argumento_agente(
 
     argumento_raw = response.choices[0].message.content
 
-    # Separar el argumento de la cita de fuente
+    # Separar el argumento de la cita de fuente y limpiar marcas residuales
     fuente_insight = None
-    if insights_exploracion and "INSIGHT_USADO:" in argumento_raw:
-        partes = argumento_raw.split("INSIGHT_USADO:")
-        argumento = partes[0].strip()
-        fuente_raw = partes[1].strip().strip('"').strip("'")
-        if fuente_raw.lower() not in ("ninguno", "none", "n/a", ""):
-            fuente_insight = fuente_raw
-    else:
-        argumento = argumento_raw
+    for marca in ("INSIGHT_USADO:", "INSIGHT_USADO", "INSIGHT:"):
+        if marca in argumento_raw:
+            partes = argumento_raw.split(marca, 1)
+            argumento_raw = partes[0]
+            fuente_raw = partes[1].strip().strip('"').strip("'") if len(partes) > 1 else ""
+            if fuente_raw.lower() not in ("ninguno", "none", "n/a", ""):
+                fuente_insight = fuente_raw
+            break
+    argumento = argumento_raw.strip()
 
     _log_tokens(session_id, response, f"argumento_{perfil['rol']}")
 
