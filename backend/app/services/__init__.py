@@ -1611,24 +1611,26 @@ async def _extraer_insights_jtbd(
         f"{'Emprendedor' if m['rol'] == 'emprendedor' else perfil['nombre']}: {m['contenido']}"
         for m in historial
     )
+    # Limitar transcripción para no saturar el contexto
+    transcripcion = transcripcion[:3000]
 
-    prompt = f"""Analiza esta conversación de entrevista de usuario y extrae los insights clave.
+    prompt = f"""Analiza esta conversación y extrae insights JTBD en JSON.
 
-PERFIL ENTREVISTADO: {perfil['nombre']}, {perfil['ocupacion']}
-IDEA EVALUADA: {idea_texto}
+PERFIL: {perfil['nombre']}, {perfil['ocupacion']}
+IDEA: {idea_texto[:200]}
 
 CONVERSACIÓN:
 {transcripcion}
 
-Responde ÚNICAMENTE con un JSON:
+Responde SOLO con JSON (valores cortos, max 1 oración):
 {{
-  "job_funcional": "tarea concreta que emerge de la conversación",
-  "job_emocional": "sentimiento o estado emocional que busca",
+  "job_funcional": "tarea concreta detectada",
+  "job_emocional": "estado emocional que busca",
   "job_social": "cómo quiere ser percibido",
-  "fricciones": ["fricción 1 mencionada o implícita", "fricción 2"],
-  "temores": ["temor 1 revelado", "temor 2"],
-  "resultado_deseado": "qué éxito concreto busca",
-  "cita_clave": "frase textual más reveladora del entrevistado",
+  "fricciones": ["friccion 1", "friccion 2"],
+  "temores": ["temor 1", "temor 2"],
+  "resultado_deseado": "exito concreto que busca",
+  "cita_clave": "frase textual reveladora",
   "nivel_confianza": 0.8
 }}"""
 
@@ -1636,7 +1638,7 @@ Responde ÚNICAMENTE con un JSON:
         model="deepseek-v4-flash",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=600,
+        max_tokens=1000,
         temperature=0.2
     )
 
