@@ -530,7 +530,24 @@ NO incluyas texto fuera del JSON."""
 
     _log_tokens(session_id, response, "generar_perfil")
 
-    perfil = _parse_json_safe(response.choices[0].message.content)
+    contenido = (response.choices[0].message.content or "").strip()
+    if not contenido:
+        # Fallback: perfil mínimo si el modelo no respondió
+        perfil = {
+            "genero": "masculino",
+            "nombre": agente["rol"],
+            "edad": 35,
+            "ubicacion": "Lima, Perú",
+            "ocupacion": agente["rol"],
+            "autopercepcion": "Profesional con experiencia en el sector.",
+            "creencias_centrales": ["La evidencia es clave para tomar decisiones."],
+            "miedo_oculto": "Cometer errores por falta de información.",
+            "postura_debate": "Neutral técnico.",
+            "forma_de_hablar": {"formalidad": "profesional", "tono_emocional": "analítico",
+                                "frases_caracteristicas": [], "vocabulario_tipico": []},
+        }
+    else:
+        perfil = _parse_json_safe(contenido)
     perfil["rol"] = agente["rol"]
     perfil["categoria"] = agente["categoria"]
     perfil["peso"] = agente["peso"]
