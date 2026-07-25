@@ -360,34 +360,34 @@ async def sintetizar_resultados_web(
     for query, results in resultados.items():
         texto_resultados += f"\nBusqueda: {query}\n"
         for r in results:
-            texto_resultados += f"- {r['titulo']}: {r['contenido']}\n"
+            # Truncar cada resultado a 200 chars para no saturar el contexto
+            contenido = r['contenido'][:200] if r.get('contenido') else ""
+            texto_resultados += f"- {r['titulo']}: {contenido}\n"
+    # Limitar el total a 2000 chars
+    texto_resultados = texto_resultados[:2000]
 
-    prompt = f"""Analiza estos resultados de busqueda web y sintetiza
-la informacion mas relevante para crear perfiles de usuarios sinteticos creibles.
+    prompt = f"""Sintetiza estos resultados de busqueda en un JSON conciso.
 
-CONTEXTO:
-- Sector: {contexto.sector}
-- Pais: {contexto.pais}
-- Usuarios objetivo: {contexto.usuarios_objetivo}
+Sector: {contexto.sector} | Pais: {contexto.pais} | Usuarios: {contexto.usuarios_objetivo}
 
 RESULTADOS:
 {texto_resultados}
 
-Responde UNICAMENTE con un JSON:
+Responde SOLO con JSON, valores cortos (max 1 oración cada uno):
 {{
-  "tendencias_sector": "2-3 tendencias actuales del sector en el pais",
-  "comportamiento_usuario": "como se comporta realmente el usuario objetivo",
-  "barreras_reales": ["barrera 1 con evidencia", "barrera 2 con evidencia"],
-  "oportunidades": "oportunidades reales detectadas en el mercado",
-  "contexto_cultural": "aspectos culturales y locales relevantes",
-  "competidores_detectados": ["nombre o descripcion breve del competidor/alternativa 1", "competidor 2"]
+  "tendencias_sector": "tendencias actuales del sector",
+  "comportamiento_usuario": "comportamiento real del usuario objetivo",
+  "barreras_reales": ["barrera 1", "barrera 2"],
+  "oportunidades": "oportunidades detectadas",
+  "contexto_cultural": "aspectos culturales relevantes",
+  "competidores_detectados": ["competidor 1", "competidor 2"]
 }}"""
 
     response = await client.chat.completions.create(
         model="deepseek-v4-flash",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=500,
+        max_tokens=1500,
         temperature=0.3
     )
 
@@ -519,7 +519,7 @@ NO incluyas texto fuera del JSON."""
                     model="deepseek-v4-flash",
                     messages=[{"role": "user", "content": prompt}],
                     response_format={"type": "json_object"},
-                    max_tokens=1000,
+                    max_tokens=2000,
                     temperature=0.8
                 )
             break
@@ -1076,7 +1076,7 @@ Responde ÚNICAMENTE con este JSON (sin texto adicional):
         model="deepseek-v4-flash",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=500,
+        max_tokens=1500,
         temperature=0,
     )
 
@@ -1706,7 +1706,7 @@ Responde ÚNICAMENTE con un JSON:
         model="deepseek-v4-flash",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=1000,
+        max_tokens=2000,
         temperature=0.3
     )
 
