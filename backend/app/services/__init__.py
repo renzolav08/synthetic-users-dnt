@@ -133,16 +133,16 @@ _PALABRAS_FEMENINO = {
 }
 
 def _inferir_genero(perfil: dict) -> str:
-    """Infiere género del nombre/rol; el campo genero del LLM se usa solo si la inferencia no es concluyente."""
-    texto = f"{perfil.get('nombre', '')} {perfil.get('rol', '')} {perfil.get('ocupacion', '')}".lower()
-    # La inferencia léxica tiene prioridad sobre el LLM (el LLM a veces se equivoca)
-    for palabra in _PALABRAS_FEMENINO:
-        if palabra in texto:
-            return "femenino"
-    # Si el LLM asignó un género válido y la inferencia no fue concluyente, usarlo
+    """Usa el género que asignó el LLM al perfil; la inferencia léxica solo como fallback."""
+    # Prioridad 1: campo genero asignado explícitamente por el LLM al generar el perfil
     g = perfil.get("genero", "")
     if g in ("masculino", "femenino"):
         return g
+    # Prioridad 2: inferencia léxica por palabras femeninas en nombre/rol/ocupación
+    texto = f"{perfil.get('nombre', '')} {perfil.get('rol', '')} {perfil.get('ocupacion', '')}".lower()
+    for palabra in _PALABRAS_FEMENINO:
+        if palabra in texto:
+            return "femenino"
     return "masculino"
 
 
