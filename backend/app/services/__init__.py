@@ -246,7 +246,7 @@ REGLAS PARA LOS AGENTES (genera EXACTAMENTE 5, ni uno más ni uno menos):
         model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=800,
+        max_tokens=2000,
         temperature=0.3
     )
 
@@ -1161,7 +1161,7 @@ async def generar_consenso(
         model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=1000,
+        max_tokens=2500,
         temperature=0.3
     )
     _log_tokens(session_id, response, "consenso")
@@ -1233,7 +1233,7 @@ REGLAS:
         model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=1500,
+        max_tokens=3000,
         temperature=0.4
     )
 
@@ -1294,7 +1294,7 @@ REGLAS:
         model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=1500,
+        max_tokens=3000,
         temperature=0.4
     )
 
@@ -1842,7 +1842,7 @@ nivel_confianza: 0.0-1.0 según cantidad y consistencia de evidencia"""
         model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=1500,
+        max_tokens=3000,
         temperature=0.2
     )
 
