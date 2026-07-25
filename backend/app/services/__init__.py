@@ -701,7 +701,8 @@ async def generar_argumento_agente(
         "- NO uses frases genéricas como 'Como experto...'\n"
         "- USA tu vocabulario y tono característico\n"
         "- Si hay evidencia de entrevistas, úsala explícitamente\n"
-        "- Responde en máximo 4 oraciones directas y contundentes\n"
+        "- Responde en EXACTAMENTE 3 oraciones. No más. No menos.\n"
+        "- Cada oración debe ser corta y directa. PARA después de la tercera oración.\n"
         "- NO uses listas ni bullets — habla naturalmente\n"
         f"{instruccion_cita}\n"
         "Ahora da tu argumento:"
@@ -711,7 +712,7 @@ async def generar_argumento_agente(
         response = await client.chat.completions.create(
             model="deepseek-v4-flash",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=700,
+            max_tokens=1200,
             temperature=0.2
         )
 
