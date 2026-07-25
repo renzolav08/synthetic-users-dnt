@@ -694,7 +694,7 @@ async def generar_argumento_agente(
         response = await client.chat.completions.create(
             model="deepseek-v4-flash",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=350,
+            max_tokens=700,
             temperature=0.2
         )
 
@@ -788,7 +788,7 @@ async def ejecutar_debate(
                     perfil, idea_texto, contexto, insights_exploracion, session_id,
                     postura_asignada=postura_asignada,
                 ),
-                timeout=30.0,
+                timeout=60.0,
             )
         except asyncio.TimeoutError:
             return {
@@ -855,7 +855,7 @@ Sé directo, máximo 3-4 oraciones. Habla en primera persona como {perfil['rol']
                     client.chat.completions.create(
                         model="deepseek-v4-flash",
                         messages=[{"role": "user", "content": prompt}],
-                        max_tokens=250,
+                        max_tokens=500,
                         temperature=0.8,
                     ),
                     timeout=25.0
