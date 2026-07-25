@@ -243,7 +243,7 @@ REGLAS PARA LOS AGENTES (genera EXACTAMENTE 5, ni uno más ni uno menos):
 - NO incluyas texto fuera del JSON"""
 
     response = await client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=800,
@@ -329,7 +329,7 @@ Responde UNICAMENTE con un JSON:
 }}"""
 
     response = await client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=500,
@@ -461,7 +461,7 @@ NO incluyas texto fuera del JSON."""
         try:
             async with _deepseek_sem:
                 response = await client.chat.completions.create(
-                    model="deepseek-chat",
+                    model="deepseek-v4-pro",
                     messages=[{"role": "user", "content": prompt}],
                     response_format={"type": "json_object"},
                     max_tokens=1000,
@@ -637,7 +637,7 @@ async def generar_argumento_agente(
 
     async with _deepseek_sem:
         response = await client.chat.completions.create(
-            model="deepseek-chat",
+            model="deepseek-v4-pro",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=350,
             temperature=0.2
@@ -669,7 +669,7 @@ async def generar_argumento_agente(
         )
         async with _deepseek_sem:
             clasif = await client.chat.completions.create(
-                model="deepseek-chat",
+                model="deepseek-v4-pro",
                 messages=[{"role": "user", "content": prompt_clasif}],
                 max_tokens=5,
                 temperature=0
@@ -798,7 +798,7 @@ Sé directo, máximo 3-4 oraciones. Habla en primera persona como {perfil['rol']
             async with _deepseek_sem:
                 r = await asyncio.wait_for(
                     client.chat.completions.create(
-                        model="deepseek-chat",
+                        model="deepseek-v4-pro",
                         messages=[{"role": "user", "content": prompt}],
                         max_tokens=250,
                         temperature=0.8,
@@ -1018,7 +1018,7 @@ Responde ÚNICAMENTE con este JSON (sin texto adicional):
 }}"""
 
     response = await client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=500,
@@ -1158,7 +1158,7 @@ async def generar_consenso(
     )
 
     response = await client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=1000,
@@ -1230,7 +1230,7 @@ REGLAS:
 - NO incluyas texto fuera del JSON"""
 
     response = await client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=1500,
@@ -1291,7 +1291,7 @@ REGLAS:
 - NO incluyas texto fuera del JSON"""
 
     response = await client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=1500,
@@ -1387,7 +1387,7 @@ IMPORTANTE:
 - NO incluyas texto fuera del JSON."""
 
     response = await client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=3000,
@@ -1481,7 +1481,7 @@ REGLAS ESTRICTAS:
     mensajes.append({"role": "user", "content": pregunta})
 
     response = await client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=mensajes,
         max_tokens=400,
         temperature=0.85
@@ -1535,7 +1535,7 @@ Si ninguno fue mencionado: {{"evaluados": []}}"""
 
     try:
         r = await client.chat.completions.create(
-            model="deepseek-chat",
+            model="deepseek-v4-pro",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             max_tokens=200,
@@ -1578,7 +1578,7 @@ Responde ÚNICAMENTE con un JSON:
 }}"""
 
     response = await client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=600,
@@ -1648,7 +1648,7 @@ Responde ÚNICAMENTE con un JSON:
 }}"""
 
     response = await client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=1000,
@@ -1752,7 +1752,7 @@ CRITERIOS PARA validacion_problema:
 NO incluyas texto fuera del JSON."""
 
     response = await client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=2000,
@@ -1839,7 +1839,7 @@ CRITERIOS veredicto:
 nivel_confianza: 0.0-1.0 según cantidad y consistencia de evidencia"""
 
     response = await client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=1500,

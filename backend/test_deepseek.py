@@ -13,7 +13,7 @@ async def test():
     )
     print("Conectando a DeepSeek...")
     r = await c.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[{"role": "user", "content": "Di hola en una palabra"}],
         max_tokens=10
     )
