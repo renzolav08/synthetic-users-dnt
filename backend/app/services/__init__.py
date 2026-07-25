@@ -15,6 +15,61 @@ import os
 import json
 import time
 
+def _parse_json_safe(raw: str) -> dict:
+    """
+    Parsea JSON de forma robusta tolerando respuestas truncadas del modelo.
+    1. Intenta json.loads directo.
+    2. Extrae el bloque entre { } o [ ] más externo.
+    3. Intenta cerrar llaves/corchetes faltantes.
+    """
+    raw = raw.strip()
+    # Intento directo
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # Extraer desde primer { hasta último } (o [ hasta ])
+    start = raw.find("{")
+    if start == -1:
+        start = raw.find("[")
+    if start != -1:
+        raw = raw[start:]
+
+    # Intentar reparar cerrando llaves/corchetes faltantes
+    opens = {"(": ")", "{": "}", "[": "]"}
+    stack = []
+    result = []
+    in_string = False
+    escape = False
+    for ch in raw:
+        if escape:
+            escape = False
+            result.append(ch)
+            continue
+        if ch == "\\":
+            escape = True
+            result.append(ch)
+            continue
+        if ch == '"' and not escape:
+            in_string = not in_string
+        if not in_string:
+            if ch in opens:
+                stack.append(opens[ch])
+            elif ch in opens.values():
+                if stack and stack[-1] == ch:
+                    stack.pop()
+        result.append(ch)
+    # Cerrar lo que falte
+    for close in reversed(stack):
+        result.append(close)
+    repaired = "".join(result)
+    try:
+        return json.loads(repaired)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"No se pudo reparar el JSON del modelo: {e}\nRaw (primeros 500): {raw[:500]}")
+
+
 # ── TA-003: Caché de perfiles en memoria ────────────────────────────────────
 _perfil_cache: dict[str, tuple[dict, float]] = {}  # key → (perfil, timestamp)
 _CACHE_TTL = 86400  # 24 horas
@@ -250,7 +305,7 @@ REGLAS PARA LOS AGENTES (genera EXACTAMENTE 5, ni uno más ni uno menos):
         temperature=0.3
     )
 
-    data = json.loads(response.choices[0].message.content)
+    data = _parse_json_safe(response.choices[0].message.content)
 
     # Deduplicar agentes por rol (conservar el primero de cada rol único)
     vistos: set[str] = set()
@@ -336,7 +391,7 @@ Responde UNICAMENTE con un JSON:
         temperature=0.3
     )
 
-    return json.loads(response.choices[0].message.content)
+    return _parse_json_safe(response.choices[0].message.content)
 
 # Posturas deterministas por tipo de rol — garantiza consistencia en el veredicto
 def _postura_por_rol(rol: str) -> str:
@@ -475,7 +530,7 @@ NO incluyas texto fuera del JSON."""
 
     _log_tokens(session_id, response, "generar_perfil")
 
-    perfil = json.loads(response.choices[0].message.content)
+    perfil = _parse_json_safe(response.choices[0].message.content)
     perfil["rol"] = agente["rol"]
     perfil["categoria"] = agente["categoria"]
     perfil["peso"] = agente["peso"]
@@ -1025,7 +1080,7 @@ Responde ÚNICAMENTE con este JSON (sin texto adicional):
         temperature=0,
     )
 
-    raw = json.loads(response.choices[0].message.content)
+    raw = _parse_json_safe(response.choices[0].message.content)
 
     # Validar longitudes y recortar/rellenar si GPT devuelve algo incorrecto
     esperados = {"d1": 15, "d2": 12, "d3": 13, "d4": 12, "d5": 8}
@@ -1166,7 +1221,7 @@ async def generar_consenso(
     )
     _log_tokens(session_id, response, "consenso")
 
-    resultado = json.loads(response.choices[0].message.content)
+    resultado = _parse_json_safe(response.choices[0].message.content)
     # Adjuntar scores de rúbrica para que el frontend pueda mostrarlos si lo desea
     resultado["rubrica"] = {
         "score_total": rubrica["score_total"],
@@ -1237,7 +1292,7 @@ REGLAS:
         temperature=0.4
     )
 
-    data = json.loads(response.choices[0].message.content)
+    data = _parse_json_safe(response.choices[0].message.content)
     supuestos = [Supuesto(**s) for s in data["supuestos"]]
     return SupuestosDetectados(
         idea_texto=idea_texto,
@@ -1298,7 +1353,7 @@ REGLAS:
         temperature=0.4
     )
 
-    data = json.loads(response.choices[0].message.content)
+    data = _parse_json_safe(response.choices[0].message.content)
 
     stakeholders = [Stakeholder(**s) for s in data["stakeholders"]]
 
@@ -1394,7 +1449,7 @@ IMPORTANTE:
         temperature=0.85
     )
 
-    data = json.loads(response.choices[0].message.content)
+    data = _parse_json_safe(response.choices[0].message.content)
     perfiles = data["perfiles"]
 
     # Asignar foto realista a cada perfil en paralelo
@@ -1585,7 +1640,7 @@ Responde ÚNICAMENTE con un JSON:
         temperature=0.2
     )
 
-    return json.loads(response.choices[0].message.content)
+    return _parse_json_safe(response.choices[0].message.content)
 
 
 # ── Nodo 3 (exploración): Detección de patrones por stakeholder ───────────────
@@ -1655,7 +1710,7 @@ Responde ÚNICAMENTE con un JSON:
         temperature=0.3
     )
 
-    result = json.loads(response.choices[0].message.content)
+    result = _parse_json_safe(response.choices[0].message.content)
     result["stakeholder_id"] = stakeholder_id
     return result
 
@@ -1759,7 +1814,7 @@ NO incluyas texto fuera del JSON."""
         temperature=0.3
     )
 
-    data = json.loads(response.choices[0].message.content)
+    data = _parse_json_safe(response.choices[0].message.content)
     data["total_perfiles_entrevistados"] = total_perfiles
     data["total_stakeholders"] = len(datos.conversaciones)
 
@@ -1846,5 +1901,5 @@ nivel_confianza: 0.0-1.0 según cantidad y consistencia de evidencia"""
         temperature=0.2
     )
 
-    result = json.loads(response.choices[0].message.content)
+    result = _parse_json_safe(response.choices[0].message.content)
     return result.get("evaluaciones", [])
