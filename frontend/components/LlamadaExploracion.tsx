@@ -5,21 +5,9 @@ import { useExplorarStore, type PerfilSintetico } from '@/store/useExplorarStore
 import { useMic } from '@/hooks/useMic'
 import { MicPreviewModal } from '@/components/MicPreviewModal'
 import { MicAudioBar } from '@/components/MicAudioBar'
+import { SIMLI_FACES_F, SIMLI_FACES_M, pickRandom } from '@/utils/simliFaces'
 
 const SIMLI_KEY = process.env.NEXT_PUBLIC_SIMLI_API_KEY ?? ''
-
-const SIMLI_FACES_F = [
-  'afdb6a3e-3939-40aa-92df-01604c23101c',
-  '5fc23ea5-8175-4a82-aaaf-cdd8c88543dc',
-  'b9e5fba3-071a-4e35-896e-211c4d6eaa7b',
-  'cace3ef7-a4c4-425d-a8cf-a5358eb0c427',
-]
-const SIMLI_FACES_M = [
-  '804c347a-26c9-4dcf-bb49-13df4bed61e8',
-  '1c6aa65c-d858-4721-a4d9-bda9fde03141',
-  'dd10cb5a-d31d-4f12-b69f-6db3383c006e',
-]
-function pickRandom<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)] }
 
 const SIMLI_FACE_FEMENINO  = pickRandom(SIMLI_FACES_F)
 const SIMLI_FACE_MASCULINO = pickRandom(SIMLI_FACES_M)

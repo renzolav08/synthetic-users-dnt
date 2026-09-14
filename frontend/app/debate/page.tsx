@@ -10,23 +10,10 @@ import { useMic } from '@/hooks/useMic'
 import { MicPreviewModal } from '@/components/MicPreviewModal'
 import { MicAudioBar } from '@/components/MicAudioBar'
 import { beep } from '@/utils/beep'
+import { crearAsignadorDeCaras } from '@/utils/simliFaces'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
 const SIMLI_KEY = process.env.NEXT_PUBLIC_SIMLI_API_KEY ?? ''
-
-const SIMLI_FACES_F = [
-  'afdb6a3e-3939-40aa-92df-01604c23101c',
-  '5fc23ea5-8175-4a82-aaaf-cdd8c88543dc',
-  'b9e5fba3-071a-4e35-896e-211c4d6eaa7b',
-  'cace3ef7-a4c4-425d-a8cf-a5358eb0c427',
-]
-const SIMLI_FACES_M = [
-  '804c347a-26c9-4dcf-bb49-13df4bed61e8',
-  '1c6aa65c-d858-4721-a4d9-bda9fde03141',
-  'dd10cb5a-d31d-4f12-b69f-6db3383c006e',
-]
-
-function pickRandom<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)] }
 
 const MAX_AGENTS = 5
 
@@ -342,7 +329,7 @@ export default function DebatePage() {
   const simliVideoEls  = useRef<(HTMLVideoElement | null)[]>(Array(MAX_AGENTS).fill(null))
   const simliAudioEls  = useRef<(HTMLAudioElement | null)[]>(Array(MAX_AGENTS).fill(null))
   const faceIds        = useRef<(string | null)[]>(Array(MAX_AGENTS).fill(null))
-  const faceCounters   = useRef({ f: 0, m: 0 })
+  const asignarFaceRef = useRef(crearAsignadorDeCaras())
   const simliInitedIdx = useRef<Set<number>>(new Set())
   const [simliConState, setSimliConState] = useState<boolean[]>(Array(MAX_AGENTS).fill(false))
 
@@ -385,12 +372,10 @@ export default function DebatePage() {
 
     simliInitedIdx.current.add(idx)
 
-    // Asignar cara única por género, sin repetir
+    // Asignar cara única — nunca repite entre los 5 agentes concurrentes aunque
+    // el debate resulte con más agentes de un género que caras en su pool
     if (!faceIds.current[idx]) {
-      const esFem = genero !== 'masculino'
-      faceIds.current[idx] = esFem
-        ? SIMLI_FACES_F[faceCounters.current.f++ % SIMLI_FACES_F.length]
-        : SIMLI_FACES_M[faceCounters.current.m++ % SIMLI_FACES_M.length]
+      faceIds.current[idx] = asignarFaceRef.current(genero)
     }
     const faceId = faceIds.current[idx]!
 
