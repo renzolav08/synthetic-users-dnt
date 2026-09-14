@@ -117,7 +117,7 @@ export default function HistorialPage() {
                 <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
                     <p className="text-gray-200 text-sm leading-relaxed">
-                      {d.idea_texto.length > 140 ? d.idea_texto.slice(0, 140) + '…' : d.idea_texto}
+                      {d.idea_texto.length > 100 ? d.idea_texto.slice(0, 100) + '...' : d.idea_texto}
                     </p>
                     {d.resumen_ejecutivo && (
                       <p className="text-gray-500 text-xs mt-1.5 line-clamp-2 leading-relaxed">

@@ -141,8 +141,9 @@ function reproducirDebate(wavB64: string): Promise<void> {
 
 
 // ── Tile agente — estilo Meet ─────────────────────────────────────────────────
-function TileAgente({ rol, estadoTile, posicion, tileRef, videoSrc, slowVideoSrc, capturedFrame }: {
+function TileAgente({ rol, nombre, estadoTile, posicion, tileRef, videoSrc, slowVideoSrc, capturedFrame }: {
   rol: string
+  nombre?: string
   estadoTile: 'pendiente' | 'hablando' | 'completado'
   posicion?: string
   tileRef?: (el: HTMLDivElement | null) => void
@@ -222,10 +223,13 @@ function TileAgente({ rol, estadoTile, posicion, tileRef, videoSrc, slowVideoSrc
         </div>
       )}
 
-      {/* Solo rol */}
+      {/* Nombre + rol */}
       <div className="absolute bottom-0 inset-x-0 z-20"
         style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.6) 60%, transparent 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '10px 8px 5px' }}>
-        <p className="truncate w-full text-center font-semibold" style={{ fontSize: 11, color: hablando ? color : '#e5e7eb', lineHeight: 1.3 }}>{rol}</p>
+        {nombre && (
+          <p className="truncate w-full text-center font-semibold" style={{ fontSize: 12, color: hablando ? color : '#f9fafb', lineHeight: 1.3 }}>{nombre}</p>
+        )}
+        <p className="truncate w-full text-center" style={{ fontSize: 10, color: hablando ? color : '#9ca3af', lineHeight: 1.3 }}>{rol}</p>
         {posicion && completado && (
           <p style={{ fontSize: 10, color: COLOR_POSICION[posicion] || '#9ca3af' }}>{ICONO_POSICION[posicion]} {posicion}</p>
         )}
@@ -292,6 +296,9 @@ export default function DebatePage() {
   const [rondas, setRondas] = useState<{ replica: string; respuestas: typeof argumentos }[]>([])
   const yaGuardoRef = useRef(false)
   const debateIniciadoRef = useRef(false)
+  const debateDeadlineRef = useRef(0)
+  const debateTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [segundosRestantes, setSegundosRestantes] = useState<number | null>(null)
   const [textoReplica, setTextoReplica] = useState('')
   const [enviandoReplica, setEnviandoReplica] = useState(false)
   const handleMicReplicaSend = useCallback((texto: string) => {
@@ -511,6 +518,7 @@ export default function DebatePage() {
       desmontadoRef.current = true          // aborta processQueue en curso
       ttsQueueRef.current = []              // vacía cola pendiente
       ttsPlayingRef.current = false
+      if (debateTimeoutIdRef.current) clearTimeout(debateTimeoutIdRef.current)
       skipAudioFn?.()
       skipAudioFn = null
       if (audioDebate) { audioDebate.pause(); audioDebate = null }
@@ -558,11 +566,24 @@ export default function DebatePage() {
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
-      const timeoutId = setTimeout(() => { reader.cancel(); setError('El debate tardó demasiado.') }, 120_000)
+      // Timeout de inactividad: se reinicia cada vez que llega un chunk del stream.
+      // Así un debate lento pero activo (5 agentes, LLM lento) no se corta a los 120s
+      // fijos, pero un stream realmente congelado sí muestra error + Reintentar.
+      const TIMEOUT_MS = 120_000
+      const armarTimeout = () => {
+        if (debateTimeoutIdRef.current) clearTimeout(debateTimeoutIdRef.current)
+        debateDeadlineRef.current = Date.now() + TIMEOUT_MS
+        debateTimeoutIdRef.current = setTimeout(() => {
+          reader.cancel()
+          setError('El debate tardó demasiado y la conexión se congeló. Puedes reintentar.')
+        }, TIMEOUT_MS)
+      }
+      armarTimeout()
       try {
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
+          armarTimeout()
           buffer += decoder.decode(value, { stream: true })
           const lines = buffer.split('\n')
           buffer = lines.pop() || ''
@@ -588,7 +609,11 @@ export default function DebatePage() {
             } catch {}
           }
         }
-      } finally { clearTimeout(timeoutId) }
+      } finally {
+        if (debateTimeoutIdRef.current) clearTimeout(debateTimeoutIdRef.current)
+        debateTimeoutIdRef.current = null
+        setSegundosRestantes(null)
+      }
     } catch (e) { setError(e instanceof Error ? e.message : 'Error inesperado') }
   }
 
@@ -692,6 +717,19 @@ export default function DebatePage() {
 
   // ── Estado visual ──────────────────────────────────────────────────────────
   const cargando = estado !== 'completado' && estado !== 'error'
+
+  // Contador visible del timeout de inactividad del stream (ver iniciarDebate)
+  useEffect(() => {
+    if (!cargando) { setSegundosRestantes(null); return }
+    const tick = () => {
+      if (!debateDeadlineRef.current) { setSegundosRestantes(null); return }
+      setSegundosRestantes(Math.max(0, Math.ceil((debateDeadlineRef.current - Date.now()) / 1000)))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [cargando])
+
   const ESTADOS_LABEL: Record<string, string> = {
     analizando: 'Analizando tu idea...', buscando_web: 'Buscando datos del mercado...',
     generando_perfiles: 'Generando agentes...', debatiendo: `Debate en progreso · ${argumentos.length}/${contexto?.agentes.length ?? '?'}`,
@@ -812,6 +850,9 @@ export default function DebatePage() {
           {insights_exploracion && <span className="text-xs bg-purple-900/40 border border-purple-800 text-purple-400 px-2 py-0.5 rounded-full hidden sm:block">✓ Insights</span>}
           {cargando && <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />}
           <span className="text-xs text-gray-400">{cargando ? ESTADOS_LABEL[estado] || 'Iniciando...' : faseInteraccion === 'preguntando' ? 'Ronda completada' : faseInteraccion === 'interviniendo' ? 'Interviniendo...' : 'Debate en curso'}</span>
+          {cargando && segundosRestantes !== null && (
+            <span className={`text-xs ${segundosRestantes <= 30 ? 'text-yellow-500' : 'text-gray-600'}`}>· {segundosRestantes}s</span>
+          )}
         </div>
       </div>
 
@@ -843,7 +884,7 @@ export default function DebatePage() {
           </div>
         ) : (
           <div className={`h-full grid ${gridCols} gap-2`}>
-            {agentesParaMostrar.map(({ rol, argIdx }, i) => {
+            {agentesParaMostrar.map(({ rol, nombre, argIdx }, i) => {
               const tieneArg = argIdx !== null
               const estaHablando = agenteHablandoIdx === argIdx && argIdx !== null
               const estadoTile: 'pendiente' | 'hablando' | 'completado' =
@@ -857,6 +898,7 @@ export default function DebatePage() {
                   key={i}
                   tileRef={(el) => { tileRefs.current[i] = el }}
                   rol={rol}
+                  nombre={nombre}
                   estadoTile={estadoTile}
                   videoSrc={videoSrc}
                   slowVideoSrc={slowVideoSrc}
@@ -894,6 +936,11 @@ export default function DebatePage() {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
             <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
             <p className="text-gray-400 text-sm">{ESTADOS_LABEL[estado] || 'Iniciando...'}</p>
+            {segundosRestantes !== null && (
+              <p className={`text-xs ${segundosRestantes <= 30 ? 'text-yellow-500' : 'text-gray-600'}`}>
+                {segundosRestantes}s sin respuesta antes de mostrar error
+              </p>
+            )}
           </div>
         )}
       </div>{/* fin grilla */}
