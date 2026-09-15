@@ -53,6 +53,11 @@ def _parse_json_safe(raw: str) -> dict:
             continue
         if ch == '"' and not escape:
             in_string = not in_string
+        if in_string and ch in ("\n", "\r", "\t"):
+            # Carácter de control sin escapar dentro de un string — JSON inválido.
+            # El modelo suele emitirlos literales en campos largos (ej. "razonamiento").
+            result.append({"\n": "\\n", "\r": "\\r", "\t": "\\t"}[ch])
+            continue
         if not in_string:
             if ch in opens:
                 stack.append(opens[ch])
