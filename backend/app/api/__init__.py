@@ -120,7 +120,7 @@ async def endpoint_transcribir(file: UploadFile = File(...)):
                 prompt="Transcripción exacta en español. El usuario habla directamente al micrófono sobre ideas de negocio.",
                 temperature=0.0,
             ),
-            timeout=25.0
+            timeout=45.0
         )
         return {"texto": response.text}
     except asyncio.TimeoutError:

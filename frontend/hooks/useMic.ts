@@ -4,7 +4,7 @@ const MIN_BLOB_SIZE = 6000
 const MIN_WORDS = 1
 const SILENCE_THRESHOLD = 20
 const SILENCE_TIMEOUT_MS = 2800
-const FETCH_TIMEOUT_MS = 30000
+const FETCH_TIMEOUT_MS = 60000  // margen para cold start del backend en Render free tier
 const BASELINE_MS = 600      // ms iniciales para medir ruido ambiente
 const SPEECH_RATIO = 2.5     // la voz debe ser 2.5x más fuerte que el ruido base
 
