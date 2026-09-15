@@ -65,6 +65,16 @@ def _parse_json_safe(raw: str) -> dict:
                 if stack and stack[-1] == ch:
                     stack.pop()
         result.append(ch)
+    # Si la respuesta se cortó a mitad de un string (truncada por max_tokens),
+    # cerrar la comilla antes de cerrar llaves/corchetes.
+    if in_string:
+        result.append('"')
+    # Si quedó una coma colgante justo antes del corte (esperando otro
+    # elemento que nunca llegó), quitarla — una coma final es JSON inválido.
+    while result and result[-1] in (" ", "\n", "\r", "\t"):
+        result.pop()
+    if result and result[-1] == ",":
+        result.pop()
     # Cerrar lo que falte
     for close in reversed(stack):
         result.append(close)
@@ -1474,7 +1484,7 @@ IMPORTANTE:
         model="deepseek-v4-flash",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=3000,
+        max_tokens=6000,
         temperature=0.85
     )
 
