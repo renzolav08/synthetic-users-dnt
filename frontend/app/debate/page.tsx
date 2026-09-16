@@ -569,7 +569,7 @@ export default function DebatePage() {
       // Timeout de inactividad: se reinicia cada vez que llega un chunk del stream.
       // Así un debate lento pero activo (5 agentes, LLM lento) no se corta a los 120s
       // fijos, pero un stream realmente congelado sí muestra error + Reintentar.
-      const TIMEOUT_MS = 120_000
+      const TIMEOUT_MS = 240_000  // margen extra — Render free tier puede ser lento entre pasos
       const armarTimeout = () => {
         if (debateTimeoutIdRef.current) clearTimeout(debateTimeoutIdRef.current)
         debateDeadlineRef.current = Date.now() + TIMEOUT_MS
