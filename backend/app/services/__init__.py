@@ -1870,15 +1870,29 @@ CRITERIOS PARA validacion_problema:
 
 NO incluyas texto fuera del JSON."""
 
-    response = await client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        max_tokens=4000,
-        temperature=0.3
-    )
+    # DeepSeek a veces devuelve contenido vacío o JSON irreparable — reintentar
+    # antes de tumbar toda la síntesis de la exploración.
+    data = None
+    for intento in range(3):
+        response = await client.chat.completions.create(
+            model="deepseek-v4-flash",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=4000,
+            temperature=0.3
+        )
+        contenido = response.choices[0].message.content
+        if contenido and contenido.strip():
+            try:
+                data = _parse_json_safe(contenido)
+                break
+            except ValueError:
+                if intento == 2:
+                    raise
+                continue
+    if data is None:
+        raise ValueError("El modelo devolvió respuestas vacías tras 3 intentos en sintetizar_exploracion")
 
-    data = _parse_json_safe(response.choices[0].message.content)
     data["total_perfiles_entrevistados"] = total_perfiles
     data["total_stakeholders"] = len(datos.conversaciones)
 
@@ -1957,13 +1971,23 @@ CRITERIOS veredicto:
 
 nivel_confianza: 0.0-1.0 según cantidad y consistencia de evidencia"""
 
-    response = await client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        max_tokens=3000,
-        temperature=0.2
-    )
-
-    result = _parse_json_safe(response.choices[0].message.content)
-    return result.get("evaluaciones", [])
+    # DeepSeek a veces devuelve contenido vacío — reintentar antes de rendirse.
+    # Una evaluación de supuestos fallida no debe tumbar toda la síntesis.
+    for intento in range(3):
+        response = await client.chat.completions.create(
+            model="deepseek-v4-flash",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=3000,
+            temperature=0.2
+        )
+        contenido = response.choices[0].message.content
+        if contenido and contenido.strip():
+            try:
+                result = _parse_json_safe(contenido)
+                return result.get("evaluaciones", [])
+            except ValueError:
+                if intento == 2:
+                    return []
+                continue
+    return []
