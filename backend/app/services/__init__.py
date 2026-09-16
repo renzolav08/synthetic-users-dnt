@@ -722,11 +722,11 @@ async def generar_argumento_agente(
         f"TU PERSONALIDAD:\n"
         f"- Autopercepción: {perfil['autopercepcion']}\n"
         f"- Creencias: {', '.join(perfil.get('creencias_centrales', []))}\n"
-        f"- Miedo oculto: {perfil['miedo_oculto']}\n"
+        f"- Miedo oculto: {perfil.get('miedo_oculto', '')}\n"
         f"TU FORMA DE HABLAR:\n"
-        f"- Formalidad: {perfil['forma_de_hablar']['formalidad']}\n"
-        f"- Tono: {perfil['forma_de_hablar']['tono_emocional']}\n"
-        f"- Frases típicas tuyas: {', '.join(perfil['forma_de_hablar']['frases_caracteristicas'])}\n\n"
+        f"- Formalidad: {perfil.get('forma_de_hablar', {}).get('formalidad', 'profesional')}\n"
+        f"- Tono: {perfil.get('forma_de_hablar', {}).get('tono_emocional', 'analítico')}\n"
+        f"- Frases típicas tuyas: {', '.join(perfil.get('forma_de_hablar', {}).get('frases_caracteristicas', []))}\n\n"
         f"LA IDEA QUE DEBES EVALUAR:\n{idea_texto}\n"
         f"{bloque_insights}"
         f"{bloque_supuestos}\n"
@@ -1563,9 +1563,9 @@ TU IDENTIDAD:
 - Temores: {', '.join(perfil.get('temores', []))}
 
 TU FORMA DE HABLAR:
-- Formalidad: {perfil['forma_de_hablar']['formalidad']}
-- Tono: {perfil['forma_de_hablar']['tono_emocional']}
-- Frases típicas: {', '.join(perfil['forma_de_hablar']['frases_caracteristicas'])}
+- Formalidad: {perfil.get('forma_de_hablar', {}).get('formalidad', 'profesional')}
+- Tono: {perfil.get('forma_de_hablar', {}).get('tono_emocional', 'analítico')}
+- Frases típicas: {', '.join(perfil.get('forma_de_hablar', {}).get('frases_caracteristicas', []))}
 
 CONTEXTO: El emprendedor te está entrevistando sobre esta idea: {idea_texto}{supuestos_bloque}
 
