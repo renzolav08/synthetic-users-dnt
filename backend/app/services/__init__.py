@@ -26,7 +26,29 @@ def _parse_json_safe(raw: str) -> dict:
     # Intento directo
     try:
         return json.loads(raw)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        # DeepSeek a veces devuelve dos JSON pegados: un eco de {"type":"json_object"}
+        # seguido del JSON real. json.loads reporta esto como "Extra data" — en ese
+        # caso, extraer TODOS los valores JSON top-level y quedarse con el más grande
+        # (el eco del response_format es minúsculo comparado al contenido real).
+        if e.msg.startswith("Extra data"):
+            decoder = json.JSONDecoder()
+            valores = []
+            idx = 0
+            texto = raw
+            while idx < len(texto):
+                texto_restante = texto[idx:].lstrip()
+                if not texto_restante:
+                    break
+                offset = len(texto[idx:]) - len(texto_restante)
+                try:
+                    obj, end = decoder.raw_decode(texto_restante)
+                    valores.append(obj)
+                    idx += offset + end
+                except json.JSONDecodeError:
+                    break
+            if valores:
+                return max(valores, key=lambda v: len(json.dumps(v)))
         pass
 
     # Extraer desde primer { hasta último } (o [ hasta ])
