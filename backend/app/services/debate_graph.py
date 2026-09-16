@@ -42,6 +42,7 @@ class DebateState(TypedDict):
     # Inputs
     idea_texto: str
     pais: Optional[str]
+    ciudad: Optional[str]
     session_id: Optional[str]
     insights_exploracion: Optional[dict]
 
@@ -61,7 +62,7 @@ class DebateState(TypedDict):
 # ── Nodo 1: Detectar contexto ─────────────────────────────────────────────────
 async def nodo_detectar_contexto(state: DebateState) -> dict:
     contexto = await detectar_contexto(
-        state["idea_texto"], state.get("pais")
+        state["idea_texto"], state.get("pais"), ciudad=state.get("ciudad")
     )
     return {
         "contexto": contexto.model_dump(),

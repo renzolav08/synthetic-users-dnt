@@ -3,10 +3,11 @@ from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi import Depends
-from app.schemas import IdeaInput, ContextoDetectado, ConversacionInput, PatronesInput, SintesisInput, EncuestaInput, ReplicaInput
+from app.schemas import IdeaInput, ContextoDetectado, ConversacionInput, PatronesInput, SintesisInput, EncuestaInput, ReplicaInput, ContextualizacionInput
 from app.auth import authenticate_user, authenticate_user_async, create_access_token, hash_password
 from app.services import (
     detectar_contexto,
+    generar_contextualizacion,
     generar_replica_agentes,
     buscar_contexto_web,
     generar_todos_los_perfiles,
@@ -240,6 +241,7 @@ async def evaluar_stream(idea: IdeaInput):
         state_input = {
             "idea_texto": idea.idea_texto,
             "pais": idea.pais,
+            "ciudad": idea.ciudad,
             "session_id": session_id,
             "insights_exploracion": idea.insights_exploracion,
             "argumentos": [],
@@ -322,6 +324,17 @@ async def endpoint_detectar_supuestos(idea: IdeaInput):
 # FASE DE EXPLORACIÓN — Endpoints
 # ══════════════════════════════════════════════════════════════════════════════
 
+@router.post("/idea/contextualizar")
+async def endpoint_contextualizar_idea(body: ContextualizacionInput):
+    """
+    Se llama justo después de que el emprendedor manda la idea, antes de detectar
+    stakeholders. Devuelve la ciudad detectada (si la idea ya la menciona) y hasta
+    3 preguntas cortas para delimitar la idea cuando falta contexto clave.
+    """
+    resultado = await generar_contextualizacion(body.idea_texto, pais=body.pais)
+    return resultado
+
+
 @router.post("/explorar/stakeholders")
 async def endpoint_detectar_stakeholders(idea: IdeaInput):
     """
@@ -329,7 +342,10 @@ async def endpoint_detectar_stakeholders(idea: IdeaInput):
     Dado el texto de una idea, devuelve los stakeholders clave con quienes
     el emprendedor debería conversar, ordenados por relevancia.
     """
-    resultado = await detectar_stakeholders(idea.idea_texto, pais_sugerido=idea.pais)
+    resultado = await detectar_stakeholders(
+        idea.idea_texto, pais_sugerido=idea.pais,
+        ciudad=idea.ciudad, contexto_extra=idea.contexto_extra,
+    )
     return resultado
 
 
@@ -352,11 +368,12 @@ async def endpoint_perfiles_stakeholder(body: dict):
     from app.schemas import Stakeholder
 
     stakeholder = Stakeholder(**body["stakeholder"])
+    ciudad = body.get("ciudad")
     datos_web = await buscar_contexto_web(
         type("Ctx", (), {
             "sector": body["sector"],
             "pais": body["pais"],
-            "region": None,
+            "region": ciudad,
             "usuarios_objetivo": stakeholder.nombre,
             "modelo_negocio": "",
         })()
@@ -367,7 +384,8 @@ async def endpoint_perfiles_stakeholder(body: dict):
         sector=body["sector"],
         pais=body["pais"],
         datos_web=datos_web,
-        cantidad=body.get("cantidad", 4)
+        cantidad=body.get("cantidad", 4),
+        ciudad=ciudad,
     )
     return {"stakeholder": stakeholder, "perfiles": perfiles, "total": len(perfiles)}
 
@@ -486,12 +504,13 @@ async def endpoint_pipeline_stakeholder(body: dict):
     from app.schemas import Stakeholder
 
     stakeholder = Stakeholder(**body["stakeholder"])
+    ciudad = body.get("ciudad")
 
     # Construye un objeto mínimo compatible con buscar_contexto_web
     class _Ctx:
         sector = body["sector"]
         pais = body["pais"]
-        region = None
+        region = ciudad
         usuarios_objetivo = stakeholder.nombre
         modelo_negocio = ""
 
@@ -503,7 +522,8 @@ async def endpoint_pipeline_stakeholder(body: dict):
         sector=body["sector"],
         pais=body["pais"],
         datos_web=datos_web,
-        cantidad=body.get("cantidad", 4)
+        cantidad=body.get("cantidad", 4),
+        ciudad=ciudad,
     )
 
     return {

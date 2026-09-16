@@ -4,6 +4,7 @@ from app.schemas import (
     ContextoDetectado, Stakeholder, StakeholdersDetectados,
     SintesisInput, SintesisExploracion,
     Supuesto, SupuestosDetectados, SupuestoEvaluado,
+    ContextualizacionDetectada,
 )
 from dotenv import load_dotenv
 import asyncio
@@ -120,8 +121,8 @@ def _cache_get(key: str) -> dict | None:
 def _cache_set(key: str, perfil: dict):
     _perfil_cache[key] = (perfil, time.time())
 
-def _perfil_cache_key(sector: str, pais: str, rol: str) -> str:
-    raw = f"{sector}|{pais}|{rol}".lower()
+def _perfil_cache_key(sector: str, pais: str, rol: str, region: str | None = None) -> str:
+    raw = f"{sector}|{pais}|{region or ''}|{rol}".lower()
     return hashlib.md5(raw.encode()).hexdigest()
 
 # ── TA-002: Conteo de tokens por sesión ─────────────────────────────────────
@@ -277,11 +278,81 @@ def _mp3_to_wav_pcm16(mp3_bytes: bytes) -> bytes:
     return _pcm_a_wav(pcm, 16000)
 
 
+# ── Nodo 0: Contextualización inicial (ciudad + preguntas de delimitación) ───
+async def generar_contextualizacion(idea_texto: str, pais: str | None = None) -> ContextualizacionDetectada:
+    """
+    Se ejecuta apenas el emprendedor manda la idea, antes de detectar stakeholders.
+    Intenta extraer la ciudad/distrito si ya está clara en el texto, y genera hasta
+    3 preguntas cortas para delimitar la idea cuando falta contexto clave (ciudad,
+    alcance, segmento específico) — evita que el resto del sistema invente
+    ubicaciones o supuestos no confirmados por el emprendedor.
+    """
+    pais_instruccion = f"El emprendedor opera en {pais}." if pais else "No se especificó país."
+
+    prompt = f"""Eres un analista que ayuda a delimitar ideas de negocio antes de investigarlas.
+
+IDEA DEL EMPRENDEDOR:
+{idea_texto}
+
+{pais_instruccion}
+
+TAREA 1 — Ciudad/distrito:
+Revisa si la idea YA menciona explícitamente una ciudad, distrito o zona concreta
+(ej: "Trujillo", "La Victoria", "el centro de Arequipa"). Si la menciona con
+claridad, extráela tal cual. Si NO la menciona o es ambigua, deja el campo en null
+— NO inventes ni infieras una ciudad que el emprendedor no escribió.
+
+TAREA 2 — Preguntas de delimitación:
+Genera entre 0 y 3 preguntas MUY cortas (una línea, fáciles de responder en pocas
+palabras) SOLO si falta información crítica para investigar bien esta idea.
+Prioriza en este orden:
+1. Ciudad/distrito específico (si no se detectó en la Tarea 1) — SIEMPRE pregúntala si falta
+2. Alcance o escala (ej: ¿piloto en un barrio o toda la ciudad?)
+3. Segmento o nicho específico si la idea es muy general
+
+Si la idea ya es clara y específica en todo, devuelve una lista vacía de preguntas.
+NO preguntes cosas que la idea ya responde.
+
+Responde ÚNICAMENTE con un JSON:
+{{
+  "ciudad_detectada": "ciudad tal cual la escribió el emprendedor, o null",
+  "preguntas": [
+    {{
+      "id": "slug_corto",
+      "pregunta": "pregunta concreta de una línea",
+      "placeholder": "ejemplo breve de respuesta esperada"
+    }}
+  ]
+}}
+
+NO incluyas texto fuera del JSON."""
+
+    response = await client.chat.completions.create(
+        model="deepseek-v4-flash",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        max_tokens=800,
+        temperature=0.2
+    )
+
+    contenido = response.choices[0].message.content
+    if not contenido or not contenido.strip():
+        return ContextualizacionDetectada(ciudad_detectada=None, preguntas=[])
+
+    try:
+        data = _parse_json_safe(contenido)
+    except ValueError:
+        return ContextualizacionDetectada(ciudad_detectada=None, preguntas=[])
+
+    data["preguntas"] = data.get("preguntas", [])[:3]  # hard cap: nunca más de 3
+    return ContextualizacionDetectada(**data)
+
+
 # ── Nodo 1: Detección de contexto ────────────────────────────────────────────
 _contexto_cache: dict[str, tuple[ContextoDetectado, float]] = {}
 
-async def detectar_contexto(idea_texto: str, pais_sugerido: str | None = None) -> ContextoDetectado:
-    cache_key = hashlib.md5(f"{idea_texto}|{pais_sugerido or ''}".encode()).hexdigest()
+async def detectar_contexto(idea_texto: str, pais_sugerido: str | None = None, ciudad: str | None = None) -> ContextoDetectado:
+    cache_key = hashlib.md5(f"{idea_texto}|{pais_sugerido or ''}|{ciudad or ''}".encode()).hexdigest()
     cached = _contexto_cache.get(cache_key)
     # Invalidar si el contexto cacheado tiene más de 5 agentes (datos viejos)
     if cached and len(cached[0].agentes) > 5:
@@ -296,6 +367,10 @@ async def detectar_contexto(idea_texto: str, pais_sugerido: str | None = None) -
         if pais_sugerido else
         'Infiere el país a partir de la idea o usa el mercado latinoamericano más relevante.'
     )
+    ciudad_instruccion = (
+        f'\nIMPORTANTE: La ciudad/distrito confirmado es "{ciudad}". Úsalo tal cual en "region" — NUNCA lo cambies por otra ciudad.'
+        if ciudad else ""
+    )
 
     prompt = f"""Eres un analizador experto de ideas de negocio.
 Analiza la siguiente idea y extrae el contexto estructurado.
@@ -303,13 +378,13 @@ Analiza la siguiente idea y extrae el contexto estructurado.
 IDEA DEL EMPRENDEDOR:
 {idea_texto}
 
-{pais_instruccion}
+{pais_instruccion}{ciudad_instruccion}
 
 Responde ÚNICAMENTE con un JSON válido con esta estructura exacta:
 {{
   "sector": "sector principal del negocio",
   "pais": "{pais_sugerido if pais_sugerido else 'país detectado o inferido'}",
-  "region": "ciudad o región si se menciona, null si no",
+  "region": "{ciudad if ciudad else 'ciudad o región si se menciona, null si no'}",
   "idioma": "español",
   "usuarios_objetivo": "descripción del segmento de usuarios principales",
   "modelo_negocio": "tipo de modelo de negocio",
@@ -511,7 +586,7 @@ Responde ÚNICAMENTE con un JSON con esta estructura:
   "genero": "masculino|femenino",
   "nombre": "nombre completo de UNA sola persona (sin 'y', sin 'e', sin parejas), apropiado para {contexto.pais}",
   "edad": número entero entre 25 y 55,
-  "ubicacion": "ciudad, {contexto.pais}",
+  "ubicacion": "{contexto.region + ', ' + contexto.pais if contexto.region else 'ciudad, ' + contexto.pais}",
   "ocupacion": "ocupación específica y detallada relacionada con el sector",
   "autopercepcion": "cómo se ve a sí mismo en 1-2 oraciones",
   "creencias_centrales": [
@@ -536,11 +611,12 @@ Responde ÚNICAMENTE con un JSON con esta estructura:
 }}
 
 IMPORTANTE: El perfil debe ser específico para {contexto.pais} y el sector {contexto.sector}.
+{f'La ubicación DEBE ser {contexto.region} — NUNCA uses otra ciudad o distrito.' if contexto.region else ''}
 Fundamenta las creencias y comportamientos en los datos reales del mercado provistos.
 NO incluyas texto fuera del JSON."""
 
     # TA-003: revisar caché
-    cache_key = _perfil_cache_key(contexto.sector, contexto.pais, agente["rol"])
+    cache_key = _perfil_cache_key(contexto.sector, contexto.pais, agente["rol"], contexto.region)
     cached = _cache_get(cache_key)
     if cached:
         # ajustar peso y tipo al agente actual, no al cacheado
@@ -1363,16 +1439,23 @@ REGLAS:
 
 
 # ── Nodo 0: Detección de stakeholders ────────────────────────────────────────
-async def detectar_stakeholders(idea_texto: str, pais_sugerido: str | None = None) -> StakeholdersDetectados:
+async def detectar_stakeholders(
+    idea_texto: str,
+    pais_sugerido: str | None = None,
+    ciudad: str | None = None,
+    contexto_extra: str | None = None,
+) -> StakeholdersDetectados:
     """
     A partir de la idea, identifica con quiénes debería hablar el emprendedor
     para validar su propuesta antes de debatirla formalmente.
     """
     pais_instruccion = f"\nPaís de operación del emprendedor: {pais_sugerido}. Usa este país explícitamente — no lo inferas de la idea." if pais_sugerido else ""
+    ciudad_instruccion = f"\nCiudad/distrito de operación: {ciudad}. TODOS los stakeholders y perfiles deben ubicarse ahí — no uses otra ciudad." if ciudad else ""
+    extra_instruccion = f"\nContexto adicional confirmado por el emprendedor:\n{contexto_extra}" if contexto_extra else ""
     prompt = f"""Eres un experto en investigación de usuarios y desarrollo de clientes (Customer Discovery).
 
 Un emprendedor tiene la siguiente idea de negocio:
-{idea_texto}{pais_instruccion}
+{idea_texto}{pais_instruccion}{ciudad_instruccion}{extra_instruccion}
 
 Tu tarea es identificar TODOS los stakeholders con quienes debería conversar este emprendedor
 para validar su idea. Piensa más allá del usuario final directo — considera decisores,
@@ -1422,6 +1505,7 @@ REGLAS:
         idea_texto=idea_texto,
         sector=data["sector"],
         pais=data["pais"],
+        ciudad=ciudad,
         stakeholders=stakeholders,
         razonamiento=data["razonamiento"]
     )
@@ -1434,16 +1518,26 @@ async def generar_perfiles_stakeholder(
     sector: str,
     pais: str,
     datos_web: dict,
-    cantidad: int = 4
+    cantidad: int = 4,
+    ciudad: str | None = None,
 ) -> list[dict]:
     """
     Genera entre 3 y 5 perfiles distintos para un mismo stakeholder,
     cada uno con variaciones demográficas, actitudinales y contextuales.
     """
+    ciudad_obligatoria = (
+        f'\n*** CIUDAD/DISTRITO OBLIGATORIO: {ciudad} ***\nTODOS los perfiles DEBEN vivir en {ciudad}. '
+        f'NUNCA uses otra ciudad ni otro distrito, aunque conozcas ejemplos más comunes de {pais}.'
+        if ciudad else ""
+    )
+    ubicacion_regla = (
+        f'"{ciudad}" exactamente (o una zona/barrio específico dentro de {ciudad} si aplica) — NUNCA otra ciudad'
+        if ciudad else f"nombre de una ciudad real de {pais} (ej: Lima, Arequipa, Trujillo)"
+    )
     prompt = f"""Eres un motor de construcción de perfiles humanos sintéticos de alta fidelidad.
 
 *** PAÍS OBLIGATORIO: {pais} ***
-TODOS los perfiles deben ser personas que viven en {pais}. Sus nombres, ciudades, referencias culturales y contexto deben ser 100% de {pais}. NUNCA uses nombres anglosajones ni ciudades de otros países.
+TODOS los perfiles deben ser personas que viven en {pais}. Sus nombres, ciudades, referencias culturales y contexto deben ser 100% de {pais}. NUNCA uses nombres anglosajones ni ciudades de otros países.{ciudad_obligatoria}
 
 IDEA DEL EMPRENDEDOR:
 {idea_texto}
@@ -1473,7 +1567,7 @@ Responde ÚNICAMENTE con un JSON:
       "genero": "masculino|femenino",
       "nombre": "nombre completo de UNA sola persona (sin 'y', sin parejas), apropiado para {pais}",
       "edad": número entero,
-      "ubicacion": "nombre de una ciudad real de {pais} (ej: Lima, Arequipa, Trujillo)",
+      "ubicacion": "{ubicacion_regla}",
       "ocupacion": "ocupación específica",
       "autopercepcion": "cómo se ve a sí mismo en 1-2 oraciones",
       "creencias_centrales": ["creencia 1", "creencia 2", "creencia 3"],
@@ -1497,7 +1591,7 @@ Responde ÚNICAMENTE con un JSON:
 
 IMPORTANTE:
 - Los perfiles deben ser REALMENTE distintos entre sí — no variaciones superficiales.
-- El campo "ubicacion" DEBE ser una ciudad real de {pais} (ej: Lima, Arequipa, Trujillo, Cusco). NUNCA escribas "ciudad, no especificado" ni dejes el campo vacío.
+- El campo "ubicacion" DEBE ser {ubicacion_regla}. NUNCA escribas "ciudad, no especificado" ni dejes el campo vacío.
 - El campo "nombre" debe ser un nombre propio típico de {pais}.
 - Fundamenta cada perfil en los datos reales del mercado.
 - NO incluyas texto fuera del JSON."""

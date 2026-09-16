@@ -280,7 +280,7 @@ export default function DebatePage() {
     idea, estado, contexto, argumentos, arbol, reset, insights_exploracion,
     sessionId, setEstado, setContexto, addArgumento, setArbol, setError, setSessionId,
   } = useDebateStore()
-  const { pais: paisExploracion, snapshotExploracion } = useExplorarStore()
+  const { pais: paisExploracion, ciudad: ciudadExploracion, snapshotExploracion } = useExplorarStore()
   const { agregar: agregarHistorial } = useHistorialStore()
 
   const estadoRef = useRef(estado)
@@ -560,7 +560,12 @@ export default function DebatePage() {
       const res = await fetch(`${API}/evaluar-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idea_texto: idea, insights_exploracion: insights_exploracion ?? undefined, pais: paisExploracion || undefined }),
+        body: JSON.stringify({
+          idea_texto: idea,
+          insights_exploracion: insights_exploracion ?? undefined,
+          pais: paisExploracion || undefined,
+          ciudad: ciudadExploracion || undefined,
+        }),
       })
       if (!res.ok || !res.body) throw new Error(`Error ${res.status}`)
       const reader = res.body.getReader()

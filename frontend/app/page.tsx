@@ -31,10 +31,17 @@ const PAIS_POR_CODIGO: Record<string, string> = {
   UY: 'Uruguay', PY: 'Paraguay', ES: 'España',
 }
 
+type PreguntaContexto = { id: string; pregunta: string; placeholder: string }
+type Paso = 'idea' | 'cargando_contexto' | 'preguntas'
+
 export default function Home() {
   const [texto, setTexto] = useState('')
   const [pais, setPais] = useState('Perú')
   const [detectandoPais, setDetectandoPais] = useState(true)
+  const [paso, setPaso] = useState<Paso>('idea')
+  const [ciudadInput, setCiudadInput] = useState('')
+  const [preguntas, setPreguntas] = useState<PreguntaContexto[]>([])
+  const [respuestas, setRespuestas] = useState<Record<string, string>>({})
   const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
 
   const handleMicSend = useCallback((transcrito: string) => {
@@ -73,12 +80,46 @@ export default function Home() {
       .finally(() => setDetectandoPais(false))
   }, [])
 
-  function explorarPrimero() {
-    if (!texto.trim() || texto.trim().length < 20) return
+  function iniciarExploracion(ciudad: string, contextoExtra: string) {
     explorarStore.reset()
     supuestosStore.reset()
     explorarStore.setIdea(texto, '', pais)
+    explorarStore.setContextoAdicional(ciudad, contextoExtra)
     router.push('/explorar')
+  }
+
+  async function explorarPrimero() {
+    if (!texto.trim() || texto.trim().length < 20) return
+    setPaso('cargando_contexto')
+    try {
+      const res = await fetch(`${API}/idea/contextualizar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idea_texto: texto, pais }),
+      })
+      const data = await res.json()
+      const ciudad: string = data.ciudad_detectada ?? ''
+      const preguntasRecibidas: PreguntaContexto[] = data.preguntas ?? []
+      if (ciudad && preguntasRecibidas.length === 0) {
+        iniciarExploracion(ciudad, '')
+        return
+      }
+      setCiudadInput(ciudad)
+      setPreguntas(preguntasRecibidas)
+      setRespuestas({})
+      setPaso('preguntas')
+    } catch {
+      // si falla la contextualización, no bloquear al usuario — seguir sin ese contexto extra
+      iniciarExploracion('', '')
+    }
+  }
+
+  function confirmarPreguntas() {
+    const contextoExtra = preguntas
+      .filter(p => respuestas[p.id]?.trim())
+      .map(p => `${p.pregunta} ${respuestas[p.id].trim()}`)
+      .join('\n')
+    iniciarExploracion(ciudadInput.trim(), contextoExtra)
   }
 
   return (
@@ -102,6 +143,58 @@ export default function Home() {
       {/* Card principal */}
       <div className="w-full max-w-2xl bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-2xl">
 
+      {paso === 'preguntas' ? (
+        <>
+          <div className="mb-4">
+            <p className="text-white text-sm font-semibold mb-1">Antes de empezar, ayúdanos a ubicar mejor tu idea</p>
+            <p className="text-gray-500 text-xs leading-relaxed">
+              Esto evita que los perfiles y el debate terminen en un lugar distinto al que pensabas.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1.5">¿En qué ciudad o distrito planeas operar?</label>
+              <input
+                type="text"
+                value={ciudadInput}
+                onChange={e => setCiudadInput(e.target.value)}
+                placeholder="Ej: Trujillo, La Victoria (Lima), o déjalo vacío si aplica a todo el país"
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
+              />
+            </div>
+
+            {preguntas.map(p => (
+              <div key={p.id}>
+                <label className="block text-xs text-gray-400 mb-1.5">{p.pregunta}</label>
+                <input
+                  type="text"
+                  value={respuestas[p.id] ?? ''}
+                  onChange={e => setRespuestas(prev => ({ ...prev, [p.id]: e.target.value }))}
+                  placeholder={p.placeholder}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-3 mt-6">
+            <button
+              onClick={() => setPaso('idea')}
+              className="flex-shrink-0 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-600 text-sm px-4 py-3 rounded-xl transition"
+            >
+              ← Volver
+            </button>
+            <button
+              onClick={confirmarPreguntas}
+              className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all duration-200 text-sm"
+            >
+              Continuar →
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
         <label className="block text-sm text-gray-400 mb-2">
           Cuéntanos tu idea de negocio
         </label>
@@ -110,7 +203,7 @@ export default function Home() {
           <textarea
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
-            disabled={cargando}
+            disabled={cargando || paso === 'cargando_contexto'}
             placeholder={grabando ? 'Grabando... da click al micrófono para terminar' : transcribiendo ? 'Transcribiendo...' : 'Ej: Quiero crear una app que conecte a dueños de bodegas con proveedores mayoristas para hacer pedidos directos sin intermediarios...'}
             rows={6}
             className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 pr-14 text-white placeholder-gray-500 resize-none focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition disabled:opacity-50 text-sm leading-relaxed"
@@ -177,12 +270,17 @@ export default function Home() {
         <div className="flex flex-col gap-3">
           <button
             onClick={explorarPrimero}
-            disabled={cargando || texto.trim().length < 20}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm"
+            disabled={cargando || paso === 'cargando_contexto' || texto.trim().length < 20}
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm flex items-center justify-center gap-2"
           >
-            Explorar con usuarios sintéticos
+            {paso === 'cargando_contexto' && (
+              <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+            )}
+            {paso === 'cargando_contexto' ? 'Analizando tu idea...' : 'Explorar con usuarios sintéticos'}
           </button>
         </div>
+        </>
+      )}
 
       </div>
 

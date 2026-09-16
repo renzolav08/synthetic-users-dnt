@@ -18,6 +18,23 @@ class IdeaInput(BaseModel):
     insights_exploracion: Optional[dict] = None
     supuestos_evaluados: Optional[list] = None
     pais: Optional[str] = None  # país explícito del emprendedor
+    ciudad: Optional[str] = None  # ciudad/distrito explícito del emprendedor
+    contexto_extra: Optional[str] = None  # respuestas a preguntas de contextualización
+
+
+# ── Contextualización inicial de la idea (ciudad + preguntas de delimitación) ──
+class ContextualizacionInput(BaseModel):
+    idea_texto: str
+    pais: Optional[str] = None
+
+class PreguntaContexto(BaseModel):
+    id: str
+    pregunta: str
+    placeholder: str  # ejemplo del tipo de respuesta esperada
+
+class ContextualizacionDetectada(BaseModel):
+    ciudad_detectada: Optional[str] = None  # si la idea ya menciona una ciudad/distrito claro
+    preguntas: list[PreguntaContexto]        # 0-3 preguntas cortas para delimitar la idea
 
 
 class ReplicaInput(BaseModel):
@@ -92,6 +109,7 @@ class StakeholdersDetectados(BaseModel):
     idea_texto: str
     sector: str
     pais: str
+    ciudad: Optional[str] = None  # ciudad/distrito confirmado — todos los perfiles deben usarla
     stakeholders: list[Stakeholder]
     razonamiento: str           # por qué se eligieron estos stakeholders
 

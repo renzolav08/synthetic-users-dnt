@@ -257,7 +257,7 @@ function PerfilesPanel({
 }) {
   const { perfilesPor, cargandoPerfilesPor, setPerfilesPor, appendPerfilesPor,
           setCargandoPerfilesPor, patronesPor, cargandoPatronesPor, setPatronesPor,
-          setCargandoPatronesPor, historialPor, insightsPor } = useExplorarStore()
+          setCargandoPatronesPor, historialPor, insightsPor, ciudad } = useExplorarStore()
 
   const perfiles = perfilesPor[stakeholder.id] ?? []
   const cargando = cargandoPerfilesPor[stakeholder.id] ?? false
@@ -279,7 +279,7 @@ function PerfilesPanel({
     fetch(`${API}/explorar/perfiles-stakeholder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idea_texto: idea, stakeholder, sector, pais, cantidad: 4 }),
+      body: JSON.stringify({ idea_texto: idea, stakeholder, sector, pais, ciudad: ciudad || undefined, cantidad: 4 }),
     })
       .then(r => { if (!r.ok) throw new Error(`Error ${r.status}`); return r.json() })
       .then(d => { if (!d.perfiles?.length) throw new Error('Sin perfiles'); setPerfilesPor(stakeholder.id, d.perfiles) })
@@ -294,7 +294,7 @@ function PerfilesPanel({
       const res = await fetch(`${API}/explorar/perfiles-stakeholder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idea_texto: idea, stakeholder, sector, pais, cantidad: 2 }),
+        body: JSON.stringify({ idea_texto: idea, stakeholder, sector, pais, ciudad: ciudad || undefined, cantidad: 2 }),
       })
       if (!res.ok) throw new Error(`Error ${res.status}`)
       const data = await res.json()
@@ -739,7 +739,7 @@ function ConversacionPanel({ perfil, convKey, idea }: { perfil: PerfilSintetico;
 export default function ExplorarPage() {
   const router = useRouter()
   const {
-    idea, sector, pais,
+    idea, sector, pais, ciudad, contextoExtra,
     stakeholders: _stakeholders, cargandoStakeholders,
     stakeholderActivo, perfilActivoIdx,
     perfilesPor, historialPor, insightsPor,
@@ -769,7 +769,12 @@ export default function ExplorarPage() {
       const res = await fetch(`${API}/explorar/stakeholders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idea_texto: idea, pais: pais || undefined }),
+        body: JSON.stringify({
+          idea_texto: idea,
+          pais: pais || undefined,
+          ciudad: ciudad || undefined,
+          contexto_extra: contextoExtra || undefined,
+        }),
       })
       if (!res.ok) throw new Error(`Error del servidor: ${res.status}`)
       const data = await res.json()

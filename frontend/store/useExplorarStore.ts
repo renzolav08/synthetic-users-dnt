@@ -97,6 +97,8 @@ interface ExplorarStore {
   idea: string
   sector: string
   pais: string
+  ciudad: string
+  contextoExtra: string
 
   // Nodo 0
   stakeholders: Stakeholder[]
@@ -132,6 +134,7 @@ interface ExplorarStore {
 
   // setters
   setIdea: (idea: string, sector: string, pais: string) => void
+  setContextoAdicional: (ciudad: string, contextoExtra: string) => void
   setSnapshotExploracion: (s: import('@/store/useHistorialStore').SnapshotExploracion) => void
   restaurarDesdeSnapshot: (ideaTexto: string, s: import('@/store/useHistorialStore').SnapshotExploracion) => void
   setErrorStakeholders: (msg: string | null) => void
@@ -157,6 +160,8 @@ const inicial = {
   idea: '',
   sector: '',
   pais: '',
+  ciudad: '',
+  contextoExtra: '',
   stakeholders: [],
   cargandoStakeholders: false,
   perfilesPor: {},
@@ -181,6 +186,7 @@ export const useExplorarStore = create<ExplorarStore>()(
   ...inicial,
 
   setIdea: (idea, sector, pais) => set({ idea, sector, pais }),
+  setContextoAdicional: (ciudad, contextoExtra) => set({ ciudad, contextoExtra }),
   setStakeholders: (list) => set({ stakeholders: list }),
   setCargandoStakeholders: (v) => set({ cargandoStakeholders: v }),
 
@@ -279,6 +285,8 @@ export const useExplorarStore = create<ExplorarStore>()(
         idea: s.idea,
         sector: s.sector,
         pais: s.pais,
+        ciudad: s.ciudad,
+        contextoExtra: s.contextoExtra,
         snapshotExploracion: s.snapshotExploracion,
         stakeholders: s.stakeholders,
         perfilesPor: s.perfilesPor,
