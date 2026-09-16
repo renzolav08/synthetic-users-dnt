@@ -168,11 +168,11 @@ export default function SintesisPage() {
       </div>
 
       {/* Jobs to Be Done */}
-      {sintesis.jobs_principales.length > 0 && (
+      {(sintesis.jobs_principales ?? []).length > 0 && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-white">Jobs to Be Done por segmento</h2>
           <div className="space-y-3">
-            {sintesis.jobs_principales.map((job, i) => (
+            {(sintesis.jobs_principales ?? []).map((job, i) => (
               <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                 <p className="text-blue-400 text-xs font-semibold uppercase tracking-wider mb-3">
                   {job.stakeholder}
@@ -198,11 +198,11 @@ export default function SintesisPage() {
       )}
 
       {/* Patrones por stakeholder */}
-      {sintesis.patrones_por_stakeholder.length > 0 && (
+      {(sintesis.patrones_por_stakeholder ?? []).length > 0 && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-white">Patrones detectados</h2>
           <div className="grid md:grid-cols-2 gap-3">
-            {sintesis.patrones_por_stakeholder.map((p, i) => (
+            {(sintesis.patrones_por_stakeholder ?? []).map((p, i) => (
               <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
                 <p className="text-purple-400 text-xs font-semibold mb-2">{p.stakeholder}</p>
                 <p className="text-gray-200 text-sm mb-2">{p.patron}</p>
@@ -217,11 +217,11 @@ export default function SintesisPage() {
 
       {/* Fricciones y temores */}
       <div className="grid md:grid-cols-2 gap-4">
-        {sintesis.fricciones_criticas.length > 0 && (
+        {(sintesis.fricciones_criticas ?? []).length > 0 && (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h3 className="text-red-400 text-sm font-semibold mb-3">⚡ Fricciones críticas</h3>
             <ul className="space-y-2">
-              {sintesis.fricciones_criticas.map((f, i) => (
+              {(sintesis.fricciones_criticas ?? []).map((f, i) => (
                 <li key={i} className="text-gray-300 text-sm flex gap-2">
                   <span className="text-red-500 flex-shrink-0">·</span>{f}
                 </li>
@@ -230,11 +230,11 @@ export default function SintesisPage() {
           </div>
         )}
 
-        {sintesis.temores_recurrentes.length > 0 && (
+        {(sintesis.temores_recurrentes ?? []).length > 0 && (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h3 className="text-orange-400 text-sm font-semibold mb-3">😰 Temores recurrentes</h3>
             <ul className="space-y-2">
-              {sintesis.temores_recurrentes.map((t, i) => (
+              {(sintesis.temores_recurrentes ?? []).map((t, i) => (
                 <li key={i} className="text-gray-300 text-sm flex gap-2">
                   <span className="text-orange-500 flex-shrink-0">·</span>{t}
                 </li>
@@ -245,11 +245,11 @@ export default function SintesisPage() {
       </div>
 
       {/* Oportunidades */}
-      {sintesis.oportunidades_detectadas.length > 0 && (
+      {(sintesis.oportunidades_detectadas ?? []).length > 0 && (
         <div className="bg-blue-950/30 border border-blue-800 rounded-xl p-5">
           <h3 className="text-blue-400 text-sm font-semibold mb-3">💡 Oportunidades detectadas</h3>
           <ul className="space-y-2">
-            {sintesis.oportunidades_detectadas.map((o, i) => (
+            {(sintesis.oportunidades_detectadas ?? []).map((o, i) => (
               <li key={i} className="text-gray-200 text-sm flex gap-2">
                 <span className="text-blue-400 flex-shrink-0">{i + 1}.</span>{o}
               </li>
@@ -285,9 +285,9 @@ export default function SintesisPage() {
                     <span className="text-xs opacity-60">{(sup.nivel_confianza * 100).toFixed(0)}%</span>
                   </div>
                 </div>
-                {sup.evidencia.length > 0 && (
+                {(sup.evidencia ?? []).length > 0 && (
                   <div className="space-y-1 mt-2 pt-2 border-t border-white/10">
-                    {sup.evidencia.slice(0, 2).map((ev: string, j: number) => (
+                    {(sup.evidencia ?? []).slice(0, 2).map((ev: string, j: number) => (
                       <p key={j} className="text-xs opacity-75 italic">"{ev}"</p>
                     ))}
                   </div>
