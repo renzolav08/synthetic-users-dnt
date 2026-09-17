@@ -21,6 +21,21 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null)
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'
+const ULTIMO_EMAIL_KEY = 'ultimo_email_sesion'
+
+// Solo borra el progreso de exploración/debate si quien entra es una
+// persona distinta a la última que usó este navegador — así cerrar y
+// volver a abrir sesión (la misma persona) nunca pierde su trabajo,
+// pero sigue protegiendo una computadora compartida entre cuentas.
+function limpiarSiCambioDeUsuario(nuevoEmail: string) {
+  const anterior = localStorage.getItem(ULTIMO_EMAIL_KEY)
+  if (anterior && anterior !== nuevoEmail) {
+    localStorage.removeItem('explorar-session-v2')
+    localStorage.removeItem('debate-session-v2')
+    localStorage.removeItem('supuestos-session-v2')
+  }
+  localStorage.setItem(ULTIMO_EMAIL_KEY, nuevoEmail)
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: session, status } = useSession()
@@ -67,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const data = await res.json()
     const userData = { nombre: data.nombre, email: data.email, token: data.access_token }
-    clearSessionStores()
+    limpiarSiCambioDeUsuario(data.email)
     setManualUser(userData)
     localStorage.setItem('auth_token', data.access_token)
     localStorage.setItem('auth_user', JSON.stringify({ nombre: data.nombre, email: data.email }))
@@ -87,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const data = await res.json()
     const userData = { nombre: data.nombre, email: data.email, token: data.access_token }
-    clearSessionStores()
+    limpiarSiCambioDeUsuario(data.email)
     setManualUser(userData)
     localStorage.setItem('auth_token', data.access_token)
     localStorage.setItem('auth_user', JSON.stringify({ nombre: data.nombre, email: data.email }))
@@ -95,14 +110,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push('/app')
   }
 
-  const clearSessionStores = () => {
-    localStorage.removeItem('explorar-session-v2')
-    localStorage.removeItem('debate-session-v2')
-    localStorage.removeItem('supuestos-session-v2')
-  }
+  // Login con Google no pasa por login()/register() — reacciona al cambio de sesión
+  useEffect(() => {
+    if (session?.user?.email) limpiarSiCambioDeUsuario(session.user.email)
+  }, [session?.user?.email])
 
   const logout = () => {
-    clearSessionStores()
     setManualUser(null)
     localStorage.removeItem('auth_token')
     localStorage.removeItem('auth_user')
