@@ -1446,8 +1446,16 @@ REGLAS:
 - Los de tipo "deseabilidad" son usualmente los más críticos para una startup
 - NO incluyas texto fuera del JSON"""
 
-    data = await _completar_json_con_reintento(prompt, max_tokens=3000, temperature=0.4)
-    supuestos = [Supuesto(**s) for s in data["supuestos"]]
+    data = None
+    supuestos: list[Supuesto] = []
+    for intento in range(2):
+        data = await _completar_json_con_reintento(prompt, max_tokens=3000, temperature=0.4)
+        try:
+            supuestos = [Supuesto(**s) for s in data["supuestos"]]
+            break
+        except (ValueError, TypeError, KeyError):
+            if intento == 1:
+                raise
     return SupuestosDetectados(
         idea_texto=idea_texto,
         supuestos=supuestos,
@@ -1509,6 +1517,7 @@ REGLAS:
     # DeepSeek a veces devuelve contenido vacío o JSON irreparable — reintentar
     # antes de tumbar toda la detección de stakeholders.
     data = None
+    stakeholders: list[Stakeholder] = []
     for intento in range(3):
         response = await client.chat.completions.create(
             model="deepseek-v4-flash",
@@ -1521,15 +1530,15 @@ REGLAS:
         if contenido and contenido.strip():
             try:
                 data = _parse_json_safe(contenido)
+                stakeholders = [Stakeholder(**s) for s in data["stakeholders"]]
                 break
-            except ValueError:
+            except (ValueError, TypeError, KeyError):
+                data = None
                 if intento == 2:
                     raise
                 continue
     if data is None:
-        raise ValueError("El modelo devolvió respuestas vacías tras 3 intentos en detectar_stakeholders")
-
-    stakeholders = [Stakeholder(**s) for s in data["stakeholders"]]
+        raise ValueError("El modelo devolvió respuestas vacías o inválidas tras 3 intentos en detectar_stakeholders")
 
     return StakeholdersDetectados(
         idea_texto=idea_texto,

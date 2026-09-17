@@ -78,7 +78,7 @@ class Supuesto(BaseModel):
     nivel_riesgo: str                # "alto" | "medio" | "bajo"
     por_que_es_riesgoso: str         # explicación de por qué podría estar equivocado
     que_confirmaria: str             # qué evidencia concreta lo validaría
-    stakeholders_relevantes: list[str]  # qué stakeholders pueden testearlo
+    stakeholders_relevantes: list[str] = []  # qué stakeholders pueden testearlo
 
 class SupuestosDetectados(BaseModel):
     idea_texto: str
@@ -103,7 +103,7 @@ class Stakeholder(BaseModel):
     descripcion: str            # por qué importa este stakeholder
     relevancia: str             # "alta" | "media" | "baja"
     tipo: str                   # "usuario_final" | "decisor" | "influenciador" | "aliado" | "regulador"
-    preguntas_clave: list[str]  # qué debería preguntarle el emprendedor
+    preguntas_clave: list[str] = []  # qué debería preguntarle el emprendedor
 
 class StakeholdersDetectados(BaseModel):
     idea_texto: str
