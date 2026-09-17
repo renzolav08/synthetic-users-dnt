@@ -341,44 +341,57 @@ function PerfilesPanel({
     return () => clearInterval(iv)
   }, [cargando])
 
+  const header = (
+    <div>
+      <h2 className="text-white font-semibold text-base">{stakeholder.nombre}</h2>
+      <p className="text-gray-400 text-xs mt-1.5 leading-relaxed max-w-md">{stakeholder.descripcion}</p>
+    </div>
+  )
+
   if (!cargando && errorPerfiles) {
     return (
-      <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
-        <p className="text-red-400 text-sm">⚠ {errorPerfiles}</p>
-        <button
-          onClick={() => { setErrorPerfiles(null); setCargandoPerfilesPor(stakeholder.id, false); setPerfilesPor(stakeholder.id, []) }}
-          className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-4 py-2 rounded-lg transition"
-        >
-          Reintentar
-        </button>
+      <div className="space-y-4">
+        {header}
+        <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
+          <p className="text-red-400 text-sm">⚠ {errorPerfiles}</p>
+          <button
+            onClick={() => { setErrorPerfiles(null); setCargandoPerfilesPor(stakeholder.id, false); setPerfilesPor(stakeholder.id, []) }}
+            className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-4 py-2 rounded-lg transition"
+          >
+            Reintentar
+          </button>
+        </div>
       </div>
     )
   }
 
   if (cargando) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <div className="relative w-12 h-12">
-          <div className="w-12 h-12 border-2 border-blue-800 rounded-full" />
-          <div className="absolute inset-0 w-12 h-12 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-        </div>
-        <div className="text-center">
-          <p className="text-white text-sm font-medium">
-            Generando perfil {contadorAnim + 1} de 4
-          </p>
-          <p className="text-gray-500 text-xs mt-1">
-            Construyendo {stakeholder.nombre.toLowerCase()}...
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className={`w-2 h-2 rounded-full transition-all duration-500 ${
-                i <= contadorAnim ? 'bg-blue-500' : 'bg-gray-700'
-              }`}
-            />
-          ))}
+      <div className="space-y-4">
+        {header}
+        <div className="flex flex-col items-center justify-center h-64 gap-4">
+          <div className="relative w-12 h-12">
+            <div className="w-12 h-12 border-2 border-blue-800 rounded-full" />
+            <div className="absolute inset-0 w-12 h-12 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+          <div className="text-center">
+            <p className="text-white text-sm font-medium">
+              Generando perfil {contadorAnim + 1} de 4
+            </p>
+            <p className="text-gray-500 text-xs mt-1">
+              Construyendo {stakeholder.nombre.toLowerCase()}...
+            </p>
+          </div>
+          <div className="flex gap-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className={`w-2 h-2 rounded-full transition-all duration-500 ${
+                  i <= contadorAnim ? 'bg-blue-500' : 'bg-gray-700'
+                }`}
+              />
+            ))}
+          </div>
         </div>
       </div>
     )
