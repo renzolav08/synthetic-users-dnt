@@ -1449,7 +1449,7 @@ REGLAS:
     data = None
     supuestos: list[Supuesto] = []
     for intento in range(2):
-        data = await _completar_json_con_reintento(prompt, max_tokens=3000, temperature=0.4)
+        data = await _completar_json_con_reintento(prompt, max_tokens=5000, temperature=0.4)
         try:
             supuestos = [Supuesto(**s) for s in data["supuestos"]]
             break

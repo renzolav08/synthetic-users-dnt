@@ -76,8 +76,8 @@ class Supuesto(BaseModel):
     enunciado: str                   # "Creo que los bodegueros prefieren hacer pedidos digitales"
     tipo: str                        # "deseabilidad" | "factibilidad" | "viabilidad" | "adaptabilidad"
     nivel_riesgo: str                # "alto" | "medio" | "bajo"
-    por_que_es_riesgoso: str         # explicación de por qué podría estar equivocado
-    que_confirmaria: str             # qué evidencia concreta lo validaría
+    por_que_es_riesgoso: str = ""    # explicación de por qué podría estar equivocado
+    que_confirmaria: str = ""        # qué evidencia concreta lo validaría
     stakeholders_relevantes: list[str] = []  # qué stakeholders pueden testearlo
 
 class SupuestosDetectados(BaseModel):
