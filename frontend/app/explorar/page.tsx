@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useExplorarStore, type PerfilSintetico, type Stakeholder, type InsightsJTBD } from '@/store/useExplorarStore'
 import { useSupuestosStore, type Supuesto } from '@/store/useSupuestosStore'
+import { useHistorialStore } from '@/store/useHistorialStore'
 import AvatarHablante from '@/components/AvatarHablante'
 import LlamadaExploracion from '@/components/LlamadaExploracion'
 import { useMic } from '@/hooks/useMic'
@@ -233,7 +234,7 @@ function StakeholderCard({ sk, activo, onClick }: { sk: Stakeholder; activo: boo
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-white font-medium text-sm truncate">{sk.nombre}</p>
+          <p className={`text-white font-medium text-sm ${activo ? '' : 'truncate'}`}>{sk.nombre}</p>
           <p className={`text-xs mt-0.5 ${COLOR_TIPO[sk.tipo] ?? 'text-gray-400'}`}>
             {sk.tipo.replace('_', ' ')}
           </p>
@@ -242,7 +243,7 @@ function StakeholderCard({ sk, activo, onClick }: { sk: Stakeholder; activo: boo
           {sk.relevancia}
         </span>
       </div>
-      <p className="text-gray-400 text-xs mt-2 leading-relaxed line-clamp-2">{sk.descripcion}</p>
+      <p className={`text-gray-400 text-xs mt-2 leading-relaxed ${activo ? '' : 'line-clamp-2'}`}>{sk.descripcion}</p>
     </button>
   )
 }
@@ -388,7 +389,8 @@ function PerfilesPanel({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h2 className="text-white font-semibold text-base">{stakeholder.nombre}</h2>
-          <p className="text-gray-400 text-xs mt-0.5">{perfiles.length} perfiles generados</p>
+          <p className="text-gray-400 text-xs mt-1.5 leading-relaxed max-w-md">{stakeholder.descripcion}</p>
+          <p className="text-gray-500 text-xs mt-1.5">{perfiles.length} perfiles generados</p>
         </div>
         <div className="flex items-center gap-2">
           {perfiles.length > 0 && (
@@ -752,6 +754,7 @@ export default function ExplorarPage() {
   } = useExplorarStore()
 
   const { supuestos, activosIds, registrarEvidencia } = useSupuestosStore()
+  const { agregar: agregarHistorial } = useHistorialStore()
   const stakeholders = _stakeholders ?? []
 
   // Estado de videollamada activa
@@ -882,6 +885,18 @@ export default function ExplorarPage() {
         })),
       }
       setSnapshotExploracion(snap)
+
+      // Guardar ya en el historial — antes dependía de terminar todo el debate,
+      // así que si el debate fallaba o no se llegaba a hacer, se perdía el chat.
+      agregarHistorial({
+        session_id: crypto.randomUUID(),
+        idea_texto: idea,
+        recomendacion: data.validacion_problema ?? 'parcial',
+        nivel_confianza: data.nivel_confianza ?? 0,
+        resumen_ejecutivo: data.resumen_problema ?? '',
+        fecha: new Date().toISOString(),
+        exploracion: snap,
+      })
 
       router.push('/sintesis')
     } catch (e: unknown) {

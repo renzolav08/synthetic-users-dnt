@@ -9,12 +9,21 @@ const COLOR_VEREDICTO: Record<string, string> = {
   viable: 'bg-green-900/60 border-green-700 text-green-300',
   no_viable: 'bg-red-900/60 border-red-700 text-red-300',
   condicionalmente_viable: 'bg-yellow-900/60 border-yellow-700 text-yellow-300',
+  // Vocabulario de síntesis de exploración (guardada aunque no se llegue a debatir)
+  validado: 'bg-green-900/60 border-green-700 text-green-300',
+  no_validado: 'bg-red-900/60 border-red-700 text-red-300',
+  parcial: 'bg-yellow-900/60 border-yellow-700 text-yellow-300',
 }
 const LABEL_VEREDICTO: Record<string, string> = {
   viable: '✓ Viable',
   no_viable: '✗ No viable',
   condicionalmente_viable: '◐ Condicional',
+  validado: '✓ Validado',
+  no_validado: '✗ No validado',
+  parcial: '◐ Parcial',
 }
+// Distingue si la entrada quedó solo en exploración o llegó a debate completo
+const VEREDICTOS_EXPLORACION = new Set(['validado', 'no_validado', 'parcial'])
 
 export default function HistorialPage() {
   const router = useRouter()
@@ -116,7 +125,10 @@ export default function HistorialPage() {
               <div key={d.session_id} className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 transition">
                 <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
-                    <p className="text-gray-200 text-sm leading-relaxed">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${VEREDICTOS_EXPLORACION.has(d.recomendacion) ? 'bg-purple-950/50 text-purple-400 border border-purple-800' : 'bg-blue-950/50 text-blue-400 border border-blue-800'}`}>
+                      {VEREDICTOS_EXPLORACION.has(d.recomendacion) ? 'Exploración' : 'Debate completo'}
+                    </span>
+                    <p className="text-gray-200 text-sm leading-relaxed mt-1.5">
                       {d.idea_texto.length > 100 ? d.idea_texto.slice(0, 100) + '...' : d.idea_texto}
                     </p>
                     {d.resumen_ejecutivo && (
