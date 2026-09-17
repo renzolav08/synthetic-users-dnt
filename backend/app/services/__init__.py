@@ -108,6 +108,33 @@ def _parse_json_safe(raw: str) -> dict:
         raise ValueError(f"No se pudo reparar el JSON del modelo: {e}\nRaw (primeros 500): {raw[:500]}")
 
 
+async def _completar_json_con_reintento(
+    prompt: str, max_tokens: int, temperature: float, max_intentos: int = 3
+) -> dict:
+    """
+    Llama al LLM pidiendo JSON y reintenta si el contenido viene vacío o es
+    irreparable — DeepSeek a veces devuelve contenido vacío sin motivo aparente,
+    y sin este reintento eso tumbaba el endpoint entero con un 500.
+    """
+    for intento in range(max_intentos):
+        response = await client.chat.completions.create(
+            model="deepseek-v4-flash",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        contenido = response.choices[0].message.content
+        if contenido and contenido.strip():
+            try:
+                return _parse_json_safe(contenido)
+            except ValueError:
+                if intento == max_intentos - 1:
+                    raise
+                continue
+    raise ValueError(f"El modelo devolvió respuestas vacías tras {max_intentos} intentos")
+
+
 # ── TA-003: Caché de perfiles en memoria ────────────────────────────────────
 _perfil_cache: dict[str, tuple[dict, float]] = {}  # key → (perfil, timestamp)
 _CACHE_TTL = 86400  # 24 horas
@@ -409,15 +436,7 @@ REGLAS PARA LOS AGENTES (genera EXACTAMENTE 5, ni uno más ni uno menos):
 - NUNCA repitas el mismo rol — todos los roles deben ser únicos y representar perspectivas distintas
 - NO incluyas texto fuera del JSON"""
 
-    response = await client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        max_tokens=2000,
-        temperature=0.3
-    )
-
-    data = _parse_json_safe(response.choices[0].message.content)
+    data = await _completar_json_con_reintento(prompt, max_tokens=2000, temperature=0.3)
 
     # Deduplicar agentes por rol (conservar el primero de cada rol único)
     vistos: set[str] = set()
@@ -495,15 +514,7 @@ Responde SOLO con JSON, valores cortos (max 1 oración cada uno):
   "competidores_detectados": ["competidor 1", "competidor 2"]
 }}"""
 
-    response = await client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        max_tokens=1500,
-        temperature=0.3
-    )
-
-    return _parse_json_safe(response.choices[0].message.content)
+    return await _completar_json_con_reintento(prompt, max_tokens=1500, temperature=0.3)
 
 # Posturas deterministas por tipo de rol — garantiza consistencia en el veredicto
 def _postura_por_rol(rol: str) -> str:
@@ -1349,16 +1360,30 @@ async def generar_consenso(
         "}"
     )
 
-    response = await client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        max_tokens=2500,
-        temperature=0.3
-    )
-    _log_tokens(session_id, response, "consenso")
+    # DeepSeek a veces devuelve contenido vacío — reintentar antes de perder
+    # un debate completo justo en el último paso.
+    resultado = None
+    for intento in range(3):
+        response = await client.chat.completions.create(
+            model="deepseek-v4-flash",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=2500,
+            temperature=0.3
+        )
+        _log_tokens(session_id, response, "consenso")
+        contenido = response.choices[0].message.content
+        if contenido and contenido.strip():
+            try:
+                resultado = _parse_json_safe(contenido)
+                break
+            except ValueError:
+                if intento == 2:
+                    raise
+                continue
+    if resultado is None:
+        raise ValueError("El modelo devolvió respuestas vacías tras 3 intentos en generar_consenso")
 
-    resultado = _parse_json_safe(response.choices[0].message.content)
     # Adjuntar scores de rúbrica para que el frontend pueda mostrarlos si lo desea
     resultado["rubrica"] = {
         "score_total": rubrica["score_total"],
@@ -1421,15 +1446,7 @@ REGLAS:
 - Los de tipo "deseabilidad" son usualmente los más críticos para una startup
 - NO incluyas texto fuera del JSON"""
 
-    response = await client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        max_tokens=3000,
-        temperature=0.4
-    )
-
-    data = _parse_json_safe(response.choices[0].message.content)
+    data = await _completar_json_con_reintento(prompt, max_tokens=3000, temperature=0.4)
     supuestos = [Supuesto(**s) for s in data["supuestos"]]
     return SupuestosDetectados(
         idea_texto=idea_texto,
@@ -1489,15 +1506,28 @@ REGLAS:
 - Ordena de mayor a menor relevancia
 - NO incluyas texto fuera del JSON"""
 
-    response = await client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        max_tokens=3000,
-        temperature=0.4
-    )
-
-    data = _parse_json_safe(response.choices[0].message.content)
+    # DeepSeek a veces devuelve contenido vacío o JSON irreparable — reintentar
+    # antes de tumbar toda la detección de stakeholders.
+    data = None
+    for intento in range(3):
+        response = await client.chat.completions.create(
+            model="deepseek-v4-flash",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=3000,
+            temperature=0.4
+        )
+        contenido = response.choices[0].message.content
+        if contenido and contenido.strip():
+            try:
+                data = _parse_json_safe(contenido)
+                break
+            except ValueError:
+                if intento == 2:
+                    raise
+                continue
+    if data is None:
+        raise ValueError("El modelo devolvió respuestas vacías tras 3 intentos en detectar_stakeholders")
 
     stakeholders = [Stakeholder(**s) for s in data["stakeholders"]]
 
@@ -1596,15 +1626,7 @@ IMPORTANTE:
 - Fundamenta cada perfil en los datos reales del mercado.
 - NO incluyas texto fuera del JSON."""
 
-    response = await client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        max_tokens=6000,
-        temperature=0.85
-    )
-
-    data = _parse_json_safe(response.choices[0].message.content)
+    data = await _completar_json_con_reintento(prompt, max_tokens=6000, temperature=0.85)
     perfiles = data["perfiles"]
 
     # Asignar foto realista a cada perfil en paralelo
@@ -1789,15 +1811,7 @@ Responde SOLO con JSON (valores cortos, max 1 oración):
   "nivel_confianza": 0.8
 }}"""
 
-    response = await client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        max_tokens=1000,
-        temperature=0.2
-    )
-
-    return _parse_json_safe(response.choices[0].message.content)
+    return await _completar_json_con_reintento(prompt, max_tokens=1000, temperature=0.2)
 
 
 # ── Nodo 3 (exploración): Detección de patrones por stakeholder ───────────────
@@ -1859,15 +1873,7 @@ Responde ÚNICAMENTE con un JSON:
   ]
 }}"""
 
-    response = await client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        max_tokens=2000,
-        temperature=0.3
-    )
-
-    result = _parse_json_safe(response.choices[0].message.content)
+    result = await _completar_json_con_reintento(prompt, max_tokens=2000, temperature=0.3)
     result["stakeholder_id"] = stakeholder_id
     return result
 
