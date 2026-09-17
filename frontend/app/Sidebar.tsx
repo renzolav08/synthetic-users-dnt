@@ -25,7 +25,7 @@ export default function Sidebar() {
   const sesionActiva = !!ideaActiva && stakeholders.length > 0
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  if (pathname === '/login') return null
+  if (pathname === '/login' || pathname === '/') return null
 
   const initials = user?.nombre
     ? user.nombre.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
@@ -90,7 +90,7 @@ export default function Sidebar() {
       {/* Nueva evaluación */}
       <div className="px-3 pb-3">
         <button
-          onClick={() => router.push('/')}
+          onClick={() => router.push('/app')}
           className="w-full flex items-center gap-2 bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-gray-600 text-gray-300 hover:text-white rounded-xl px-3 py-2.5 text-sm transition-colors"
         >
           <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

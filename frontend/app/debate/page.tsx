@@ -499,7 +499,7 @@ export default function DebatePage() {
 
   // ── Init ───────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!idea) { router.replace('/'); return }
+    if (!idea) { router.replace('/app'); return }
     if (!insights_exploracion) { router.replace('/explorar'); return }
     if (estado === 'completado') { setFaseInteraccion('preguntando'); return }
     // Si hay un error guardado del estado anterior, resetear y reintentar
@@ -509,7 +509,7 @@ export default function DebatePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idea, estado])
 
-  useEffect(() => { if (!idea) router.replace('/') }, [idea, router])
+  useEffect(() => { if (!idea) router.replace('/app') }, [idea, router])
 
   // Detener TODO audio al desmontar (navegación fuera del debate)
   useEffect(() => {
@@ -826,7 +826,7 @@ export default function DebatePage() {
             )}
             <div className="flex justify-center gap-3 pt-2">
               <button onClick={exportarCSV} className="border border-gray-700 text-gray-300 hover:bg-gray-800 px-4 py-2.5 rounded-xl transition text-sm">↓ CSV</button>
-              <button onClick={() => { reset(); router.push('/') }} className="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-8 py-2.5 rounded-xl transition text-sm">Evaluar otra idea →</button>
+              <button onClick={() => { reset(); router.push('/app') }} className="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-8 py-2.5 rounded-xl transition text-sm">Evaluar otra idea →</button>
             </div>
           </div>
         </div>,
@@ -835,7 +835,7 @@ export default function DebatePage() {
 
       {/* ── Barra superior ──────────────────────────────────────────────────── */}
       <div className="flex-shrink-0 h-11 bg-gray-900/90 border-b border-gray-800 backdrop-blur flex items-center pl-12 md:pl-4 pr-4 gap-3 z-10">
-        <button onClick={() => { if (audioDebate) { audioDebate.pause(); audioDebate = null }; reset(); router.push('/') }}
+        <button onClick={() => { if (audioDebate) { audioDebate.pause(); audioDebate = null }; reset(); router.push('/app') }}
           className="text-gray-500 hover:text-white text-sm transition flex-shrink-0">
           ← Salir
         </button>
@@ -884,7 +884,7 @@ export default function DebatePage() {
             <p className="text-red-400 text-sm">{useDebateStore.getState().error || 'Error inesperado.'}</p>
             <div className="flex gap-3">
               <button onClick={() => { debateIniciadoRef.current = false; setEstado('idle'); iniciarDebate() }} className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition">Reintentar</button>
-              <button onClick={() => { reset(); router.push('/') }} className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm px-6 py-2.5 rounded-xl transition">Volver</button>
+              <button onClick={() => { reset(); router.push('/app') }} className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm px-6 py-2.5 rounded-xl transition">Volver</button>
             </div>
           </div>
         ) : (

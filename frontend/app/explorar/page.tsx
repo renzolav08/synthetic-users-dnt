@@ -776,7 +776,7 @@ export default function ExplorarPage() {
   } | null>(null)
 
   useEffect(() => {
-    if (!idea) router.replace('/')
+    if (!idea) router.replace('/app')
   }, [idea, router])
 
   async function cargarStakeholders() {
@@ -964,7 +964,7 @@ export default function ExplorarPage() {
 
       {/* Barra superior */}
       <div className="border-b border-gray-800 bg-gray-900/80 backdrop-blur pl-12 md:pl-4 pr-4 py-2 md:py-3 flex items-center justify-between flex-shrink-0 gap-2">
-        <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm transition flex-shrink-0">
+        <button onClick={() => router.push('/app')} className="text-gray-400 hover:text-white text-sm transition flex-shrink-0">
           ← Cambiar
         </button>
         <p className="text-gray-500 text-xs text-center truncate flex-1 hidden md:block">{idea}</p>

@@ -7,7 +7,9 @@ const PUBLIC_PATHS = ['/login', '/api/auth']
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
+  // "/" es el landing público — solo coincidencia exacta, no prefijo
+  // (para no exponer accidentalmente todas las rutas, que empiezan con "/")
+  if (pathname === '/' || PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
     return NextResponse.next()
   }
 

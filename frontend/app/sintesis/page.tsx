@@ -45,7 +45,7 @@ export default function SintesisPage() {
 
   // Redirigir si no hay sesión activa
   useEffect(() => {
-    if (!idea) router.replace('/')
+    if (!idea) router.replace('/app')
   }, [idea, router])
 
   function irAlDebate() {

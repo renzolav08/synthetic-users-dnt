@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('auth_token', data.access_token)
     localStorage.setItem('auth_user', JSON.stringify({ nombre: data.nombre, email: data.email }))
     document.cookie = `auth_token=${data.access_token}; path=/; max-age=${8 * 3600}; SameSite=Lax`
-    router.push('/')
+    router.push('/app')
   }
 
   const register = async (email: string, password: string, nombre: string) => {
@@ -92,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('auth_token', data.access_token)
     localStorage.setItem('auth_user', JSON.stringify({ nombre: data.nombre, email: data.email }))
     document.cookie = `auth_token=${data.access_token}; path=/; max-age=${8 * 3600}; SameSite=Lax`
-    router.push('/')
+    router.push('/app')
   }
 
   const clearSessionStores = () => {

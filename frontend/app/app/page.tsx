@@ -1,0 +1,300 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { useDebateStore } from '@/store/useDebateStore'
+import { useExplorarStore } from '@/store/useExplorarStore'
+import { useSupuestosStore } from '@/store/useSupuestosStore'
+import { useRouter } from 'next/navigation'
+import { useMic } from '@/hooks/useMic'
+import { MicPreviewModal } from '@/components/MicPreviewModal'
+import { MicAudioBar } from '@/components/MicAudioBar'
+import { beep } from '@/utils/beep'
+
+const PAISES: { nombre: string; bandera: string }[] = [
+  { nombre: 'Perú',      bandera: '🇵🇪' },
+  { nombre: 'México',    bandera: '🇲🇽' },
+  { nombre: 'Colombia',  bandera: '🇨🇴' },
+  { nombre: 'Argentina', bandera: '🇦🇷' },
+  { nombre: 'Chile',     bandera: '🇨🇱' },
+  { nombre: 'Ecuador',   bandera: '🇪🇨' },
+  { nombre: 'Bolivia',   bandera: '🇧🇴' },
+  { nombre: 'Venezuela', bandera: '🇻🇪' },
+  { nombre: 'Uruguay',   bandera: '🇺🇾' },
+  { nombre: 'Paraguay',  bandera: '🇵🇾' },
+  { nombre: 'España',    bandera: '🇪🇸' },
+]
+
+// Mapeo de código ISO → nombre en español usado en el sistema
+const PAIS_POR_CODIGO: Record<string, string> = {
+  PE: 'Perú', MX: 'México', CO: 'Colombia', AR: 'Argentina',
+  CL: 'Chile', EC: 'Ecuador', BO: 'Bolivia', VE: 'Venezuela',
+  UY: 'Uruguay', PY: 'Paraguay', ES: 'España',
+}
+
+type PreguntaContexto = { id: string; pregunta: string; placeholder: string }
+type Paso = 'idea' | 'cargando_contexto' | 'preguntas'
+
+export default function AppPage() {
+  const [texto, setTexto] = useState('')
+  const [pais, setPais] = useState('Perú')
+  const [detectandoPais, setDetectandoPais] = useState(true)
+  const [paso, setPaso] = useState<Paso>('idea')
+  const [ciudadInput, setCiudadInput] = useState('')
+  const [preguntas, setPreguntas] = useState<PreguntaContexto[]>([])
+  const [respuestas, setRespuestas] = useState<Record<string, string>>({})
+  const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
+
+  const handleMicSend = useCallback((transcrito: string) => {
+    setTexto(prev => prev ? prev + ' ' + transcrito : transcrito)
+  }, [])
+
+  const { grabando, transcribiendo, audioLevel, errorMic, toggleMic } = useMic({
+    apiUrl: API,
+    onSend: handleMicSend,
+    onBeepStart: () => beep('inicio'),
+    onBeepEnd: () => beep('fin'),
+    skipPreview: true,
+  })
+  const { estado, setEstado } = useDebateStore()
+  const explorarStore = useExplorarStore()
+  const supuestosStore = useSupuestosStore()
+  const sesionActiva = !!explorarStore.idea && explorarStore.stakeholders.length > 0
+  const mensajesEnSesion = Object.values(explorarStore.historialPor).reduce((s, h) => s + h.length, 0)
+  const router = useRouter()
+  const cargando = false
+
+  useEffect(() => {
+    // Si el debate quedó en progreso al volver al home, resetear a idle
+    if (estado !== 'idle' && estado !== 'error') setEstado('idle')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    fetch('https://ipapi.co/json/')
+      .then(r => r.json())
+      .then(data => {
+        const detected = PAIS_POR_CODIGO[data.country_code]
+        if (detected) setPais(detected)
+      })
+      .catch(() => {})
+      .finally(() => setDetectandoPais(false))
+  }, [])
+
+  function iniciarExploracion(ciudad: string, contextoExtra: string) {
+    explorarStore.reset()
+    supuestosStore.reset()
+    explorarStore.setIdea(texto, '', pais)
+    explorarStore.setContextoAdicional(ciudad, contextoExtra)
+    router.push('/explorar')
+  }
+
+  async function explorarPrimero() {
+    if (!texto.trim() || texto.trim().length < 20) return
+    setPaso('cargando_contexto')
+    try {
+      const res = await fetch(`${API}/idea/contextualizar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idea_texto: texto, pais }),
+      })
+      const data = await res.json()
+      const ciudad: string = data.ciudad_detectada ?? ''
+      const preguntasRecibidas: PreguntaContexto[] = data.preguntas ?? []
+      if (ciudad && preguntasRecibidas.length === 0) {
+        iniciarExploracion(ciudad, '')
+        return
+      }
+      setCiudadInput(ciudad)
+      setPreguntas(preguntasRecibidas)
+      setRespuestas({})
+      setPaso('preguntas')
+    } catch {
+      // si falla la contextualización, no bloquear al usuario — seguir sin ese contexto extra
+      iniciarExploracion('', '')
+    }
+  }
+
+  function confirmarPreguntas() {
+    const contextoExtra = preguntas
+      .filter(p => respuestas[p.id]?.trim())
+      .map(p => `${p.pregunta} ${respuestas[p.id].trim()}`)
+      .join('\n')
+    iniciarExploracion(ciudadInput.trim(), contextoExtra)
+  }
+
+  return (
+    <main className="min-h-full bg-gray-950 text-white flex flex-col items-center justify-center px-4 pt-14 md:pt-0">
+
+      {/* Header */}
+      <div className="mb-8 md:mb-12 text-center px-2">
+        <div className="inline-flex items-center gap-2 bg-blue-950 border border-blue-800 rounded-full px-3 py-1 md:px-4 md:py-1.5 text-blue-300 text-xs md:text-sm mb-4 md:mb-6">
+          <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+          Sistema Multiagente
+        </div>
+        <h1 className="text-3xl md:text-5xl font-bold text-white mb-3 md:mb-4 tracking-tight">
+          Evalúa tu idea de negocio
+        </h1>
+        <p className="text-gray-400 text-sm md:text-lg max-w-xl">
+          Expón tu idea libremente. Una suite de agentes especializados
+          la debatirá desde múltiples perspectivas críticas.
+        </p>
+      </div>
+
+      {/* Card principal */}
+      <div className="w-full max-w-2xl bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-2xl">
+
+      {paso === 'preguntas' ? (
+        <>
+          <div className="mb-4">
+            <p className="text-white text-sm font-semibold mb-1">Antes de empezar, ayúdanos a ubicar mejor tu idea</p>
+            <p className="text-gray-500 text-xs leading-relaxed">
+              Esto evita que los perfiles y el debate terminen en un lugar distinto al que pensabas.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1.5">¿En qué ciudad o distrito planeas operar?</label>
+              <input
+                type="text"
+                value={ciudadInput}
+                onChange={e => setCiudadInput(e.target.value)}
+                placeholder="Ej: Trujillo, La Victoria (Lima), o déjalo vacío si aplica a todo el país"
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
+              />
+            </div>
+
+            {preguntas.map(p => (
+              <div key={p.id}>
+                <label className="block text-xs text-gray-400 mb-1.5">{p.pregunta}</label>
+                <input
+                  type="text"
+                  value={respuestas[p.id] ?? ''}
+                  onChange={e => setRespuestas(prev => ({ ...prev, [p.id]: e.target.value }))}
+                  placeholder={p.placeholder}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-3 mt-6">
+            <button
+              onClick={() => setPaso('idea')}
+              className="flex-shrink-0 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-600 text-sm px-4 py-3 rounded-xl transition"
+            >
+              ← Volver
+            </button>
+            <button
+              onClick={confirmarPreguntas}
+              className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all duration-200 text-sm"
+            >
+              Continuar →
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+        <label className="block text-sm text-gray-400 mb-2">
+          Cuéntanos tu idea de negocio
+        </label>
+
+        <div className="relative">
+          <textarea
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            disabled={cargando || paso === 'cargando_contexto'}
+            placeholder={grabando ? 'Grabando... da click al micrófono para terminar' : transcribiendo ? 'Transcribiendo...' : 'Ej: Quiero crear una app que conecte a dueños de bodegas con proveedores mayoristas para hacer pedidos directos sin intermediarios...'}
+            rows={6}
+            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 pr-14 text-white placeholder-gray-500 resize-none focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition disabled:opacity-50 text-sm leading-relaxed"
+          />
+          <button
+            type="button"
+            onClick={toggleMic}
+            disabled={transcribiendo}
+            title={grabando ? 'Detener grabación' : 'Dictar idea por voz'}
+            className={`absolute bottom-3 right-3 w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+              grabando
+                ? 'bg-red-600 hover:bg-red-500 shadow-lg shadow-red-900/50'
+                : transcribiendo
+                ? 'bg-gray-600 opacity-60 cursor-not-allowed'
+                : 'bg-gray-700 hover:bg-gray-600'
+            }`}
+          >
+            {transcribiendo ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                {grabando ? (
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                ) : (
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zm-1 14.93A7 7 0 0 1 5 9H3a9 9 0 0 0 8 8.94V21H9v2h6v-2h-2v-2.07A9 9 0 0 0 21 9h-2a7 7 0 0 1-6 6.93z"/>
+                )}
+              </svg>
+            )}
+          </button>
+        </div>
+        {(grabando || transcribiendo) && (
+          <div className="mt-2">
+            <MicAudioBar level={audioLevel} grabando={grabando} transcribiendo={transcribiendo} />
+          </div>
+        )}
+        {errorMic && <p className="mt-2 text-xs text-red-400">{errorMic}</p>}
+
+        {/* Selector de país */}
+        <div className="flex items-center gap-2 mt-3 mb-1">
+          <label className="text-xs text-gray-500 flex-shrink-0">
+            País de operación
+            {detectandoPais && <span className="ml-1 text-gray-600">· detectando...</span>}
+          </label>
+          <select
+            value={pais}
+            onChange={e => setPais(e.target.value)}
+            disabled={detectandoPais}
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-600 transition disabled:opacity-50"
+          >
+            {PAISES.map(p => (
+              <option key={p.nombre} value={p.nombre}>{p.bandera} {p.nombre}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Contador de caracteres */}
+        <div className="flex justify-end items-center mt-2 mb-5">
+          <span className={`text-xs ${texto.length > 500 ? 'text-yellow-400' : 'text-gray-500'}`}>
+            {texto.length} caracteres
+          </span>
+        </div>
+
+        {/* Botones */}
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={explorarPrimero}
+            disabled={cargando || paso === 'cargando_contexto' || texto.trim().length < 20}
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm flex items-center justify-center gap-2"
+          >
+            {paso === 'cargando_contexto' && (
+              <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+            )}
+            {paso === 'cargando_contexto' ? 'Analizando tu idea...' : 'Explorar con usuarios sintéticos'}
+          </button>
+        </div>
+        </>
+      )}
+
+      </div>
+
+
+      {/* Link al historial */}
+      <div className="mt-6">
+        <a
+          href="/historial"
+          className="text-xs text-gray-600 hover:text-gray-400 transition underline underline-offset-2"
+        >
+          Ver historial →
+        </a>
+      </div>
+
+    </main>
+  )
+}

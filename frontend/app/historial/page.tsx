@@ -69,7 +69,7 @@ export default function HistorialPage() {
     <main className="min-h-screen bg-gray-950 text-white">
       <div className="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-10">
         <div className="max-w-4xl mx-auto pl-12 md:pl-4 pr-4 py-3 flex items-center justify-between">
-          <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm transition">
+          <button onClick={() => router.push('/app')} className="text-gray-400 hover:text-white text-sm transition">
             ← Inicio
           </button>
           <h1 className="text-sm font-semibold text-white">Historial</h1>
@@ -113,7 +113,7 @@ export default function HistorialPage() {
           <div className="text-center py-20">
             <p className="text-gray-400 text-sm">Aún no hay debates guardados.</p>
             <button
-              onClick={() => router.push('/')}
+              onClick={() => router.push('/app')}
               className="mt-4 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition"
             >
               Evaluar una idea →
