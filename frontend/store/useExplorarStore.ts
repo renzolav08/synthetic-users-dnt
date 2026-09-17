@@ -10,6 +10,12 @@ export type Stakeholder = {
   preguntas_clave: string[]
 }
 
+export type ComponenteSIPOC = {
+  categoria: 'supplier' | 'input' | 'process' | 'output' | 'customer'
+  elemento: string
+  es_stakeholder: boolean
+}
+
 export type FormaDHablar = {
   formalidad: string
   estructura_frases: string
@@ -102,6 +108,7 @@ interface ExplorarStore {
 
   // Nodo 0
   stakeholders: Stakeholder[]
+  sipoc: ComponenteSIPOC[]
   cargandoStakeholders: boolean
 
   // Nodo 1 — perfiles por stakeholder
@@ -142,6 +149,7 @@ interface ExplorarStore {
   setCargandoSintesis: (v: boolean) => void
   setErrorSintesis: (msg: string | null) => void
   setStakeholders: (list: Stakeholder[]) => void
+  setSipoc: (list: ComponenteSIPOC[]) => void
   setCargandoStakeholders: (v: boolean) => void
   setPerfilesPor: (sid: string, perfiles: PerfilSintetico[]) => void
   appendPerfilesPor: (sid: string, perfiles: PerfilSintetico[]) => void
@@ -163,6 +171,7 @@ const inicial = {
   ciudad: '',
   contextoExtra: '',
   stakeholders: [],
+  sipoc: [],
   cargandoStakeholders: false,
   perfilesPor: {},
   cargandoPerfilesPor: {},
@@ -188,6 +197,7 @@ export const useExplorarStore = create<ExplorarStore>()(
   setIdea: (idea, sector, pais) => set({ idea, sector, pais }),
   setContextoAdicional: (ciudad, contextoExtra) => set({ ciudad, contextoExtra }),
   setStakeholders: (list) => set({ stakeholders: list }),
+  setSipoc: (list) => set({ sipoc: list }),
   setCargandoStakeholders: (v) => set({ cargandoStakeholders: v }),
 
   setPerfilesPor: (sid, perfiles) =>
@@ -289,6 +299,7 @@ export const useExplorarStore = create<ExplorarStore>()(
         contextoExtra: s.contextoExtra,
         snapshotExploracion: s.snapshotExploracion,
         stakeholders: s.stakeholders,
+        sipoc: s.sipoc,
         perfilesPor: s.perfilesPor,
         historialPor: s.historialPor,
         insightsPor: s.insightsPor,

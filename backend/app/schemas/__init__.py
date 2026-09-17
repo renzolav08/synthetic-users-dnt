@@ -105,11 +105,17 @@ class Stakeholder(BaseModel):
     tipo: str                   # "usuario_final" | "decisor" | "influenciador" | "aliado" | "regulador"
     preguntas_clave: list[str] = []  # qué debería preguntarle el emprendedor
 
+class ComponenteSIPOC(BaseModel):
+    categoria: str      # "supplier" | "input" | "process" | "output" | "customer"
+    elemento: str        # nombre concreto del proveedor, insumo, paso, entregable o cliente
+    es_stakeholder: bool  # true si este elemento del mapeo es alguien con quien conversar
+
 class StakeholdersDetectados(BaseModel):
     idea_texto: str
     sector: str
     pais: str
     ciudad: Optional[str] = None  # ciudad/distrito confirmado — todos los perfiles deben usarla
+    sipoc: list[ComponenteSIPOC] = []  # mapeo SIPOC del que se derivaron los stakeholders
     stakeholders: list[Stakeholder]
     razonamiento: str           # por qué se eligieron estos stakeholders
 

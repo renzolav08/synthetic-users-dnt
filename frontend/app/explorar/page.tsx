@@ -744,6 +744,7 @@ export default function ExplorarPage() {
     stakeholderActivo, perfilActivoIdx,
     perfilesPor, historialPor, insightsPor,
     errorStakeholders, cargandoSintesis, errorSintesis,
+    sipoc, setSipoc,
     setStakeholders, setCargandoStakeholders,
     setStakeholderActivo, setPerfilActivoIdx,
     setErrorStakeholders, setSintesis, setCargandoSintesis, setErrorSintesis,
@@ -780,6 +781,7 @@ export default function ExplorarPage() {
       const data = await res.json()
       if (!data.stakeholders?.length) throw new Error('No se detectaron stakeholders')
       setStakeholders(data.stakeholders)
+      setSipoc(data.sipoc ?? [])
       // Preservar el país seleccionado por el usuario — no dejarlo sobreescribir por el backend
       useExplorarStore.getState().setIdea(idea, data.sector ?? '', pais || (data.pais ?? ''))
       setStakeholderActivo(data.stakeholders[0].id)
@@ -909,6 +911,7 @@ export default function ExplorarPage() {
   const convKey = skActivo && perfilActivoIdx !== null ? `${skActivo.id}::${perfilActivoIdx}` : null
 
   const [panelMobile, setPanelMobile] = useState<'stakeholders' | 'perfiles' | 'chat'>('stakeholders')
+  const [mostrarSipoc, setMostrarSipoc] = useState(false)
 
   const overlayEl = typeof document !== 'undefined' ? document.body : null
 
@@ -988,7 +991,45 @@ export default function ExplorarPage() {
 
         {/* Panel izquierdo — Stakeholders + Supuestos */}
         <div className={`${panelMobile === 'stakeholders' ? 'flex' : 'hidden'} md:flex flex-col w-full md:w-64 flex-shrink-0 border-r border-gray-800 overflow-y-auto p-3 space-y-2`}>
-          <p className="text-xs text-gray-500 uppercase tracking-wider px-1 mb-3">Stakeholders</p>
+          <div className="flex items-center justify-between px-1 mb-3">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Stakeholders</p>
+            {sipoc.length > 0 && (
+              <button
+                onClick={() => setMostrarSipoc(v => !v)}
+                className="text-xs text-purple-400 hover:text-purple-300 transition"
+                title="Ver de dónde salen estos stakeholders"
+              >
+                {mostrarSipoc ? '▲' : '▼'} SIPOC
+              </button>
+            )}
+          </div>
+
+          {mostrarSipoc && sipoc.length > 0 && (
+            <div className="mb-3 bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2.5">
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Mapeo del proceso de negocio — los stakeholders salen de aquí, no de una lista genérica.
+              </p>
+              {(['supplier', 'input', 'process', 'output', 'customer'] as const).map(cat => {
+                const items = sipoc.filter(c => c.categoria === cat)
+                if (!items.length) return null
+                const label = { supplier: 'Proveedores', input: 'Insumos', process: 'Proceso', output: 'Salidas', customer: 'Clientes' }[cat]
+                return (
+                  <div key={cat}>
+                    <p className="text-xs font-semibold text-gray-400 mb-1">{label}</p>
+                    <ul className="space-y-0.5">
+                      {items.map((c, i) => (
+                        <li key={i} className={`text-xs flex items-start gap-1.5 ${c.es_stakeholder ? 'text-purple-300' : 'text-gray-500'}`}>
+                          <span className="flex-shrink-0">{c.es_stakeholder ? '●' : '·'}</span>
+                          {c.elemento}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )
+              })}
+              <p className="text-xs text-gray-600 pt-1 border-t border-gray-800">● = se entrevista como stakeholder</p>
+            </div>
+          )}
 
           {cargandoStakeholders && (
             <div className="flex flex-col items-center py-10 gap-3">

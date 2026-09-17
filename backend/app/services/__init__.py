@@ -1,7 +1,7 @@
 from openai import AsyncOpenAI
 from tavily import TavilyClient
 from app.schemas import (
-    ContextoDetectado, Stakeholder, StakeholdersDetectados,
+    ContextoDetectado, Stakeholder, StakeholdersDetectados, ComponenteSIPOC,
     SintesisInput, SintesisExploracion,
     Supuesto, SupuestosDetectados, SupuestoEvaluado,
     ContextualizacionDetectada,
@@ -1477,25 +1477,47 @@ async def detectar_stakeholders(
     pais_instruccion = f"\nPaís de operación del emprendedor: {pais_sugerido}. Usa este país explícitamente — no lo inferas de la idea." if pais_sugerido else ""
     ciudad_instruccion = f"\nCiudad/distrito de operación: {ciudad}. TODOS los stakeholders y perfiles deben ubicarse ahí — no uses otra ciudad." if ciudad else ""
     extra_instruccion = f"\nContexto adicional confirmado por el emprendedor:\n{contexto_extra}" if contexto_extra else ""
-    prompt = f"""Eres un experto en investigación de usuarios y desarrollo de clientes (Customer Discovery).
+    prompt = f"""Eres un consultor de procesos de negocio y experto en Customer Discovery.
 
 Un emprendedor tiene la siguiente idea de negocio:
 {idea_texto}{pais_instruccion}{ciudad_instruccion}{extra_instruccion}
 
-Tu tarea es identificar TODOS los stakeholders con quienes debería conversar este emprendedor
-para validar su idea. Piensa más allá del usuario final directo — considera decisores,
-influenciadores, aliados y posibles bloqueadores.
+TAREA 1 — Mapeo SIPOC:
+Antes de pensar en stakeholders, mapea el proceso de negocio de esta idea con la
+metodología SIPOC (Suppliers, Inputs, Process, Outputs, Customers):
+- Suppliers: quién provee los insumos/recursos que el negocio necesita para operar
+- Inputs: qué insumos concretos entran al proceso (materiales, información, dinero, etc.)
+- Process: los pasos principales del proceso de negocio (3-5 pasos, en orden)
+- Outputs: qué entrega concretamente el negocio al final del proceso
+- Customers: quién recibe ese output (puede haber más de un tipo de cliente)
+
+TAREA 2 — Stakeholders REALES a partir del SIPOC:
+Identifica con quiénes debería conversar el emprendedor para validar su idea,
+pero SOLO a partir de lo que aparece en tu propio mapeo SIPOC — no agregues
+gente "relacionada" que no participa directamente como Supplier, Customer, o
+actor necesario dentro de algún paso del Process. Marca en el SIPOC cuáles de
+esos elementos son efectivamente un stakeholder a entrevistar
+(es_stakeholder: true) y cuáles son solo insumos/pasos sin una persona
+específica detrás (es_stakeholder: false, ej: "dinero" como input no es un
+stakeholder).
 
 Responde ÚNICAMENTE con un JSON válido con esta estructura:
 {{
   "sector": "sector de la idea",
   "pais": "{pais_sugerido or 'país detectado o inferido'}",
-  "razonamiento": "explicación breve de por qué elegiste estos stakeholders",
+  "sipoc": [
+    {{"categoria": "supplier", "elemento": "nombre concreto del proveedor", "es_stakeholder": true}},
+    {{"categoria": "input", "elemento": "insumo concreto", "es_stakeholder": false}},
+    {{"categoria": "process", "elemento": "paso concreto del proceso", "es_stakeholder": false}},
+    {{"categoria": "output", "elemento": "entregable concreto", "es_stakeholder": false}},
+    {{"categoria": "customer", "elemento": "tipo de cliente concreto", "es_stakeholder": true}}
+  ],
+  "razonamiento": "explicación breve de por qué estos stakeholders salen del SIPOC mapeado, no de otros",
   "stakeholders": [
     {{
       "id": "slug_sin_espacios",
-      "nombre": "Nombre legible del stakeholder",
-      "descripcion": "Por qué es relevante para esta idea específica",
+      "nombre": "Nombre legible del stakeholder — debe corresponder a un elemento del SIPOC con es_stakeholder=true",
+      "descripcion": "Por qué es relevante para esta idea específica, citando su rol en el SIPOC (supplier/process/customer)",
       "relevancia": "alta|media|baja",
       "tipo": "usuario_final|decisor|influenciador|aliado|regulador",
       "preguntas_clave": [
@@ -1508,22 +1530,25 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura:
 }}
 
 REGLAS:
-- Identifica entre 3 y 7 stakeholders relevantes
+- El SIPOC debe tener al menos 2 elementos por categoría (2 suppliers, 2 inputs, etc.) cuando aplique
+- Identifica entre 3 y 7 stakeholders — cada uno debe mapear a un elemento del SIPOC con es_stakeholder=true
+- NO inventes stakeholders que no aparezcan en tu propio SIPOC
 - Sé específico: no "usuarios" genérico, sino quiénes exactamente (ej: "Madres trabajadoras 30-45 años", "Directores de compras de PYMEs")
 - Las preguntas_clave deben ser abiertas y orientadas a descubrir problemas reales, NO validar la solución
-- Ordena de mayor a menor relevancia
+- Ordena los stakeholders de mayor a menor relevancia
 - NO incluyas texto fuera del JSON"""
 
     # DeepSeek a veces devuelve contenido vacío o JSON irreparable — reintentar
     # antes de tumbar toda la detección de stakeholders.
     data = None
     stakeholders: list[Stakeholder] = []
+    sipoc: list[ComponenteSIPOC] = []
     for intento in range(3):
         response = await client.chat.completions.create(
             model="deepseek-v4-flash",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            max_tokens=3000,
+            max_tokens=4000,
             temperature=0.4
         )
         contenido = response.choices[0].message.content
@@ -1531,6 +1556,7 @@ REGLAS:
             try:
                 data = _parse_json_safe(contenido)
                 stakeholders = [Stakeholder(**s) for s in data["stakeholders"]]
+                sipoc = [ComponenteSIPOC(**c) for c in data.get("sipoc", [])]
                 break
             except (ValueError, TypeError, KeyError):
                 data = None
@@ -1545,6 +1571,7 @@ REGLAS:
         sector=data["sector"],
         pais=data["pais"],
         ciudad=ciudad,
+        sipoc=sipoc,
         stakeholders=stakeholders,
         razonamiento=data["razonamiento"]
     )
